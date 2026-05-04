@@ -1,5 +1,6 @@
 #include "XVideoThread.h"
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QMutex>
 #include <cstdio>
 
@@ -59,6 +60,9 @@ void XVideoThread::setUrl(const QString &url)
 
 bool XVideoThread::init()
 {
+    QElapsedTimer initTimer;
+    initTimer.start();
+
     fprintf(stderr, "[RTMP][init] begin url=%s\n", m_url.toUtf8().constData());
     fprintf(stderr,
             "[RTMP][ffmpeg] compile libavformat=%u runtime=%u compile libavcodec=%u runtime=%u compile libavutil=%u runtime=%u\n",
@@ -70,12 +74,20 @@ bool XVideoThread::init()
             avutil_version());
 
     AVDictionary *opts = nullptr;
+    const bool isRtmp = m_url.startsWith(QStringLiteral("rtmp://"), Qt::CaseInsensitive)
+                        || m_url.startsWith(QStringLiteral("rtmps://"), Qt::CaseInsensitive);
+
     av_dict_set(&opts,"rtmp_transport","tcp",0);
-    av_dict_set(&opts,"stimeout","10000000",0);
-    av_dict_set(&opts,"buffer_size","1024000",0);
-    av_dict_set(&opts,"max_delay","500000",0);
-    av_dict_set(&opts,"analyzeduration","8000000",0);
-    av_dict_set(&opts,"probesize","8000000",0);
+    av_dict_set(&opts,"stimeout","5000000",0);
+    av_dict_set(&opts,"rw_timeout","5000000",0);
+    av_dict_set(&opts,"buffer_size", isRtmp ? "327680" : "1024000", 0);
+    av_dict_set(&opts,"max_delay", isRtmp ? "100000" : "300000", 0);
+    av_dict_set(&opts,"analyzeduration", isRtmp ? "1500000" : "3000000", 0);
+    av_dict_set(&opts,"probesize", isRtmp ? "1048576" : "2097152", 0);
+    if(isRtmp) {
+        av_dict_set(&opts,"fflags","nobuffer",0);
+        av_dict_set(&opts,"flags","low_delay",0);
+    }
 
     const QByteArray urlBytes = m_url.toUtf8();
     fprintf(stderr, "[RTMP][init] avformat_open_input start\n");
@@ -88,10 +100,13 @@ bool XVideoThread::init()
         av_dict_free(&opts);
         return false;
     }
-    fprintf(stderr, "[RTMP][init] avformat_open_input ok, fmtCtx=%p\n", static_cast<void *>(m_fmtCtx));
+    fprintf(stderr, "[RTMP][init][cost] avformat_open_input ok cost=%lldms fmtCtx=%p\n",
+            initTimer.elapsed(),
+            static_cast<void *>(m_fmtCtx));
 
     av_dict_free(&opts);
     fprintf(stderr, "[RTMP][init] avformat_find_stream_info start\n");
+    const qint64 findInfoStartMs = initTimer.elapsed();
     ret = avformat_find_stream_info(m_fmtCtx,nullptr);
     if(ret < 0){
         const QString message = QString("读取流信息失败: %1, url=%2")
@@ -101,7 +116,10 @@ bool XVideoThread::init()
         unInit();
         return false;
     }
-    fprintf(stderr, "[RTMP][init] avformat_find_stream_info ok, nb_streams=%u\n", m_fmtCtx->nb_streams);
+    fprintf(stderr, "[RTMP][init][cost] avformat_find_stream_info ok step=%lldms total=%lldms nb_streams=%u\n",
+            initTimer.elapsed() - findInfoStartMs,
+            initTimer.elapsed(),
+            m_fmtCtx->nb_streams);
     av_dump_format(m_fmtCtx, 0, urlBytes.constData(), 0);
 
     fprintf(stderr, "[RTMP][init] stream list begin\n");
@@ -190,6 +208,7 @@ bool XVideoThread::init()
     }
 
     fprintf(stderr, "[RTMP][init] avcodec_open2 start\n");
+    const qint64 openCodecStartMs = initTimer.elapsed();
     ret = avcodec_open2(m_codecCtx, codec, nullptr);
     if(ret < 0){
         const QString message = QString("打开解码器失败: %1, codec=%2")
@@ -201,7 +220,9 @@ bool XVideoThread::init()
     }
 
     fprintf(stderr,
-            "[RTMP][init] ok videoIndex=%d decoder=%s width=%d height=%d pix_fmt=%d\n",
+            "[RTMP][init][cost] ok total=%lldms codecOpen=%lldms videoIndex=%d decoder=%s width=%d height=%d pix_fmt=%d\n",
+            initTimer.elapsed(),
+            initTimer.elapsed() - openCodecStartMs,
             m_videoIndex,
             codec->name,
             m_codecCtx->width,
