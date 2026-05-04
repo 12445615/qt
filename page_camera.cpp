@@ -9,6 +9,8 @@
 #include <QTextCursor>
 #include <QDebug>
 #include <QLabel>
+#include <QStandardPaths>
+#include <cstdio>
 
 #include "XVideoThread.h"
 
@@ -26,8 +28,13 @@ PageCamera::PageCamera(QWidget *parent) : QWidget(parent)
     connect(pushButton[4], &QPushButton::clicked, this, &PageCamera::btn_fullscreen_clicked);
 
     connect(listWidget, &QListWidget::itemClicked, this, &PageCamera::listWidgetClicked);
+    connect(listWidget, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item){
+        listWidgetClicked(item);
+        playSelectedPlaybackSegment();
+    });
 
-    videoThread = nullptr;
+    liveVideoThread = nullptr;
+    playbackVideoThread = nullptr;
 
     // ================= RTMP 播放 =================
     connect(rtmpPlayBtn, &QPushButton::clicked, this, [=](){
@@ -36,33 +43,10 @@ PageCamera::PageCamera(QWidget *parent) : QWidget(parent)
         if(url.isEmpty()) return;
 
         currentRTMPUrl = url;
-
-        appendAIResult(QString("播放 RTMP 地址：%1").arg(url));
-
-        // 停止旧线程
-        if(videoThread){
-            videoThread->requestInterruption();
-            videoThread->wait();
-            delete videoThread;
-            videoThread = nullptr;
-        }
-
-        videoThread = new XVideoThread(this);
-        videoThread->setUrl(url);
-
-        // 线程安全更新UI
-        connect(videoThread, &XVideoThread::sig_SendOneFrame,
-                this,
-                [=](const QImage &img){
-                    videoLabel->setPixmap(
-                        QPixmap::fromImage(img).scaled(
-                            videoLabel->size(),
-                            Qt::KeepAspectRatio,
-                            Qt::SmoothTransformation));
-                },
-                Qt::QueuedConnection);
-
-        videoThread->start();
+        startVideoPlayback(liveVideoThread,
+                           url,
+                           videoLabel,
+                           QStringLiteral("RTMP"));
     });
 
     // ================= 进度条 =================
@@ -94,26 +78,40 @@ PageCamera::PageCamera(QWidget *parent) : QWidget(parent)
 
 PageCamera::~PageCamera()
 {
-    if(videoThread){
-        videoThread->requestInterruption();
-        videoThread->wait();
-        delete videoThread;
-        videoThread = nullptr;
-    }
+    stopVideoThread(liveVideoThread, QStringLiteral("RTMP"));
+    stopVideoThread(playbackVideoThread, QStringLiteral("回放"));
 }
 
 void PageCamera::videoLayout()
 {
-    this->resize(800,480);
+    this->resize(1920,1280);
+
+    liveViewBtn = new QPushButton(QStringLiteral("实时监控"), this);
+    playbackViewBtn = new QPushButton(QStringLiteral("回放列表"), this);
+    liveViewBtn->setCheckable(true);
+    playbackViewBtn->setCheckable(true);
+    liveViewBtn->setChecked(true);
 
     // ================= FFmpeg 显示用 =================
     videoLabel = new QLabel(this);
     videoLabel->setAlignment(Qt::AlignCenter);
     videoLabel->setStyleSheet("background:black;");
     videoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    videoLabel->setMinimumSize(960, 540);
 
     listWidget = new QListWidget();
-    listWidget->setMinimumWidth(250);
+    listWidget->setMinimumHeight(520);
+
+    playbackVideoLabel = new QLabel(this);
+    playbackVideoLabel->setAlignment(Qt::AlignCenter);
+    playbackVideoLabel->setStyleSheet("background:black;");
+    playbackVideoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    playbackVideoLabel->setMinimumSize(800, 450);
+
+    playbackDeviceCombo = new QComboBox(this);
+    playbackDateCombo = new QComboBox(this);
+    playbackRefreshBtn = new QPushButton(QStringLiteral("刷新"), this);
+    playbackPlayBtn = new QPushButton(QStringLiteral("播放选中片段"), this);
 
     durationSlider = new QSlider(Qt::Horizontal);
 
@@ -141,10 +139,13 @@ void PageCamera::videoLayout()
     aiResultText->setStyleSheet(
         "QTextEdit{background:#111;color:#00ff7f;border:1px solid #444;font-family:Consolas;}");
 
-    // ================= 布局 =================
+    QHBoxLayout *viewSwitchLayout = new QHBoxLayout();
+    viewSwitchLayout->addWidget(liveViewBtn);
+    viewSwitchLayout->addWidget(playbackViewBtn);
+    viewSwitchLayout->addStretch();
+
     topLayout = new QHBoxLayout();
-    topLayout->addWidget(videoLabel);   // ⭐ 改这里
-    topLayout->addWidget(listWidget);
+    topLayout->addWidget(videoLabel);
 
     controlLayout = new QHBoxLayout();
     controlLayout->addWidget(pushButton[0]);
@@ -170,29 +171,239 @@ void PageCamera::videoLayout()
     aiLayout->addWidget(aiTitleLabel);
     aiLayout->addWidget(aiResultText);
 
+    livePage = new QWidget(this);
+    QVBoxLayout *liveLayout = new QVBoxLayout(livePage);
+    liveLayout->setContentsMargins(0,0,0,0);
+    liveLayout->addLayout(topLayout, 1);
+    liveLayout->addWidget(durationSlider);
+    liveLayout->addLayout(controlLayout);
+    liveLayout->addLayout(rtmpLayout);
+    liveLayout->addLayout(aiLayout);
+
+    playbackPage = new QWidget(this);
+    QLabel *playbackTitle = new QLabel(QStringLiteral("本地回放文件"), playbackPage);
+    playbackTitle->setStyleSheet(QStringLiteral("font-size:18px;font-weight:bold;"));
+    QHBoxLayout *playbackToolLayout = new QHBoxLayout();
+    playbackToolLayout->addWidget(new QLabel(QStringLiteral("设备:"), playbackPage));
+    playbackToolLayout->addWidget(playbackDeviceCombo);
+    playbackToolLayout->addWidget(new QLabel(QStringLiteral("日期:"), playbackPage));
+    playbackToolLayout->addWidget(playbackDateCombo);
+    playbackToolLayout->addWidget(playbackRefreshBtn);
+    playbackToolLayout->addWidget(playbackPlayBtn);
+    playbackToolLayout->addStretch();
+    QHBoxLayout *playbackContentLayout = new QHBoxLayout();
+    playbackContentLayout->addWidget(playbackVideoLabel, 3);
+    playbackContentLayout->addWidget(listWidget, 1);
+    QVBoxLayout *playbackLayout = new QVBoxLayout(playbackPage);
+    playbackLayout->setContentsMargins(0,0,0,0);
+    playbackLayout->addWidget(playbackTitle);
+    playbackLayout->addLayout(playbackToolLayout);
+    playbackLayout->addLayout(playbackContentLayout, 1);
+
+    cameraStack = new QStackedWidget(this);
+    cameraStack->addWidget(livePage);
+    cameraStack->addWidget(playbackPage);
+
     mainLayout = new QVBoxLayout();
-    mainLayout->addLayout(topLayout);
-    mainLayout->addWidget(durationSlider);
-    mainLayout->addLayout(controlLayout);
-    mainLayout->addLayout(rtmpLayout);
-    mainLayout->addLayout(aiLayout);
+    mainLayout->addLayout(viewSwitchLayout);
+    mainLayout->addWidget(cameraStack, 1);
 
     setLayout(mainLayout);
+
+    connect(liveViewBtn, &QPushButton::clicked, this, [this](){
+        cameraStack->setCurrentWidget(livePage);
+        liveViewBtn->setChecked(true);
+        playbackViewBtn->setChecked(false);
+    });
+
+    connect(playbackViewBtn, &QPushButton::clicked, this, [this](){
+        cameraStack->setCurrentWidget(playbackPage);
+        liveViewBtn->setChecked(false);
+        playbackViewBtn->setChecked(true);
+    });
+
+    connect(playbackDeviceCombo, &QComboBox::currentTextChanged,
+            this, &PageCamera::loadPlaybackDates);
+    connect(playbackDateCombo, &QComboBox::currentTextChanged,
+            this, &PageCamera::loadPlaybackSegments);
+    connect(playbackRefreshBtn, &QPushButton::clicked,
+            this, &PageCamera::scanVideoFiles);
+    connect(playbackPlayBtn, &QPushButton::clicked,
+            this, &PageCamera::playSelectedPlaybackSegment);
 }
 
 void PageCamera::scanVideoFiles()
 {
-    QDir dir(QCoreApplication::applicationDirPath()+"/myVideo");
-    if(!dir.exists()) return;
+    const QString homePath = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    playbackRootPath = QDir(homePath).filePath(QStringLiteral("data/camera_flow/video_segments"));
 
-    QStringList filter{"*.mp4","*.mkv","*.avi"};
-    QFileInfoList files = dir.entryInfoList(filter,QDir::Files);
+    playbackDeviceCombo->blockSignals(true);
+    playbackDateCombo->blockSignals(true);
+    playbackDeviceCombo->clear();
+    playbackDateCombo->clear();
+    listWidget->clear();
+    mediaObjectInfo.clear();
 
-    for(const QFileInfo &file: files){
-        MediaObjectInfo info{file.fileName(),file.absoluteFilePath()};
-        mediaObjectInfo.append(info);
-        listWidget->addItem(info.fileName);
+    QDir rootDir(playbackRootPath);
+    if(!rootDir.exists()) {
+        appendAIResult(QStringLiteral("回放目录不存在: %1").arg(playbackRootPath));
+        playbackDeviceCombo->blockSignals(false);
+        playbackDateCombo->blockSignals(false);
+        return;
     }
+
+    const QFileInfoList deviceDirs = rootDir.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot,
+        QDir::Name);
+
+    for(const QFileInfo &deviceDir : deviceDirs)
+        playbackDeviceCombo->addItem(deviceDir.fileName());
+
+    playbackDeviceCombo->blockSignals(false);
+    playbackDateCombo->blockSignals(false);
+
+    if(playbackDeviceCombo->count() > 0)
+        loadPlaybackDates(playbackDeviceCombo->currentText());
+    else
+        appendAIResult(QStringLiteral("回放目录下没有设备文件夹: %1").arg(playbackRootPath));
+}
+
+void PageCamera::loadPlaybackDates(const QString &deviceName)
+{
+    playbackDateCombo->blockSignals(true);
+    playbackDateCombo->clear();
+    listWidget->clear();
+    mediaObjectInfo.clear();
+
+    if(deviceName.isEmpty()) {
+        playbackDateCombo->blockSignals(false);
+        return;
+    }
+
+    QDir deviceDir(QDir(playbackRootPath).filePath(deviceName));
+    const QFileInfoList dateDirs = deviceDir.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot,
+        QDir::Name);
+
+    for(const QFileInfo &dateDir : dateDirs)
+        playbackDateCombo->addItem(dateDir.fileName());
+
+    playbackDateCombo->blockSignals(false);
+
+    if(playbackDateCombo->count() > 0)
+        loadPlaybackSegments(playbackDateCombo->currentText());
+    else
+        appendAIResult(QStringLiteral("设备目录下没有日期文件夹: %1").arg(deviceDir.absolutePath()));
+}
+
+void PageCamera::loadPlaybackSegments(const QString &dateName)
+{
+    listWidget->clear();
+    mediaObjectInfo.clear();
+
+    if(dateName.isEmpty())
+        return;
+
+    const QString deviceName = playbackDeviceCombo->currentText();
+    if(deviceName.isEmpty())
+        return;
+
+    QDir segmentDir(QDir(QDir(playbackRootPath).filePath(deviceName)).filePath(dateName));
+    const QFileInfoList files = segmentDir.entryInfoList(
+        QStringList() << QStringLiteral("*.ts"),
+        QDir::Files,
+        QDir::Name);
+
+    for(const QFileInfo &file : files) {
+        MediaObjectInfo info{file.fileName(), file.absoluteFilePath()};
+        mediaObjectInfo.append(info);
+        QListWidgetItem *item = new QListWidgetItem(info.fileName, listWidget);
+        item->setToolTip(info.filePath);
+    }
+
+    appendAIResult(QStringLiteral("加载回放目录: %1，片段数: %2")
+                       .arg(segmentDir.absolutePath())
+                       .arg(files.size()));
+
+    if(!mediaObjectInfo.isEmpty()) {
+        currentIndex = 0;
+        listWidget->setCurrentRow(0);
+    } else {
+        currentIndex = -1;
+    }
+}
+
+void PageCamera::playSelectedPlaybackSegment()
+{
+    if(currentIndex < 0 || currentIndex >= mediaObjectInfo.size()) {
+        appendAIResult(QStringLiteral("请先选择一个回放片段"));
+        return;
+    }
+
+    cameraStack->setCurrentWidget(playbackPage);
+    startVideoPlayback(playbackVideoThread,
+                       mediaObjectInfo.at(currentIndex).filePath,
+                       playbackVideoLabel,
+                       QStringLiteral("回放"));
+}
+
+void PageCamera::startVideoPlayback(XVideoThread *&thread,
+                                    const QString &url,
+                                    QLabel *targetLabel,
+                                    const QString &logPrefix)
+{
+    fprintf(stderr, "[VIDEO][ui] play prefix=%s url=%s\n",
+            logPrefix.toUtf8().constData(),
+            url.toUtf8().constData());
+
+    appendAIResult(QStringLiteral("%1 播放地址：%2").arg(logPrefix, url));
+
+    stopVideoThread(thread, logPrefix);
+
+    thread = new XVideoThread(this);
+    fprintf(stderr, "[VIDEO][ui] new %s thread=%p\n",
+            logPrefix.toUtf8().constData(),
+            static_cast<void *>(thread));
+    thread->setUrl(url);
+
+    connect(thread, &XVideoThread::sig_sendInitState,
+            this,
+            [this, logPrefix](bool ok){
+                appendAIResult(ok ? QStringLiteral("%1 初始化成功").arg(logPrefix)
+                                  : QStringLiteral("%1 初始化失败").arg(logPrefix));
+                if(logPrefix == QStringLiteral("RTMP"))
+                    emit liveStreamStateChanged(ok, ok ? QStringLiteral("正常") : QStringLiteral("初始化失败"));
+                else if(logPrefix == QStringLiteral("回放"))
+                    emit playbackStateChanged(ok, ok ? QStringLiteral("播放中") : QStringLiteral("初始化失败"));
+            },
+            Qt::QueuedConnection);
+
+    connect(thread, &XVideoThread::sig_errorMessage,
+            this,
+            [this, logPrefix](const QString &message){
+                appendAIResult(QStringLiteral("%1 错误：%2").arg(logPrefix, message));
+                if(logPrefix == QStringLiteral("RTMP"))
+                    emit liveStreamStateChanged(false, message);
+                else if(logPrefix == QStringLiteral("回放"))
+                    emit playbackStateChanged(false, message);
+            },
+            Qt::QueuedConnection);
+
+    connect(thread, &XVideoThread::sig_SendOneFrame,
+            this,
+            [targetLabel](const QImage &img){
+                targetLabel->setPixmap(
+                    QPixmap::fromImage(img).scaled(
+                        targetLabel->size(),
+                        Qt::KeepAspectRatio,
+                        Qt::SmoothTransformation));
+            },
+            Qt::QueuedConnection);
+
+    thread->start();
+    fprintf(stderr, "[VIDEO][ui] %s thread started=%p\n",
+            logPrefix.toUtf8().constData(),
+            static_cast<void *>(thread));
 }
 
 void PageCamera::appendAIResult(const QString &result)
@@ -201,6 +412,27 @@ void PageCamera::appendAIResult(const QString &result)
     QTextCursor cursor = aiResultText->textCursor();
     cursor.movePosition(QTextCursor::End);
     aiResultText->setTextCursor(cursor);
+}
+
+void PageCamera::stopVideoThread(XVideoThread *&thread, const QString &logPrefix)
+{
+    if(!thread){
+        fprintf(stderr, "[VIDEO][ui] stop %s thread skipped, no thread\n",
+                logPrefix.toUtf8().constData());
+        return;
+    }
+
+    fprintf(stderr, "[VIDEO][ui] stop %s thread begin thread=%p running=%d\n",
+            logPrefix.toUtf8().constData(),
+            static_cast<void *>(thread),
+            thread->isRunning() ? 1 : 0);
+    disconnect(thread, nullptr, this, nullptr);
+    thread->requestInterruption();
+    thread->wait();
+    delete thread;
+    thread = nullptr;
+    fprintf(stderr, "[VIDEO][ui] stop %s thread end\n",
+            logPrefix.toUtf8().constData());
 }
 
 // ================= 按钮逻辑 =================
@@ -233,10 +465,8 @@ void PageCamera::btn_fullscreen_clicked()
 {
     if(videoLabel->isFullScreen()){
         videoLabel->showNormal();
-        listWidget->setVisible(true);
     } else {
         videoLabel->showFullScreen();
-        listWidget->setVisible(false);
     }
 }
 

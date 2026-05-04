@@ -15,8 +15,8 @@ extern "C" {
 #include <libavutil/time.h>
 #include <libavutil/mem.h>
 #include <libavutil/frame.h>
+#include <libavutil/error.h>
 #include <libavcodec/bsf.h>
-#include <libavcodec/parser.h>
 }
 
 /**
@@ -39,6 +39,7 @@ public:
 signals:
     void sig_sendInitState(bool ok);    // 初始化成功或失败
     void sig_SendOneFrame(const QImage &img); // 发送一帧图片
+    void sig_errorMessage(const QString &message); // 发送错误信息
 
 protected:
     void run() override;
@@ -48,6 +49,7 @@ private:
     void unInit();      // 释放资源
 
     QImage frameToImage(AVFrame *frame);
+    QString avErrorString(int errorCode) const;
 
 private:
     QString m_url;

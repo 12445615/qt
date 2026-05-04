@@ -7,9 +7,11 @@
 #include <QSlider>
 #include <QLabel>
 #include <QListWidget>
+#include <QComboBox>
 #include <QTextEdit>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QStackedWidget>
 #include <QTimer>
 #include <QThread>
 #include <QImage>
@@ -33,6 +35,8 @@ signals:
     void frameReady(const QImage &img);
     void positionChanged(qint64 pos);      // 播放进度
     void durationChanged(qint64 duration); // 视频总时长
+    void liveStreamStateChanged(bool ok, const QString &message);
+    void playbackStateChanged(bool ok, const QString &message);
 
 private slots:
     void btn_play_clicked();
@@ -47,7 +51,15 @@ private:
     void videoLayout();
     void mediaPlayerInit();
     void scanVideoFiles();
+    void loadPlaybackDates(const QString &deviceName);
+    void loadPlaybackSegments(const QString &dateName);
+    void playSelectedPlaybackSegment();
+    void startVideoPlayback(XVideoThread *&thread,
+                            const QString &url,
+                            QLabel *targetLabel,
+                            const QString &logPrefix);
     void appendAIResult(const QString &result);
+    void stopVideoThread(XVideoThread *&thread, const QString &logPrefix);
 
 
     // UI 控件
@@ -59,6 +71,16 @@ private:
     QListWidget *listWidget;
     QTextEdit *aiResultText;
     QLabel *aiTitleLabel;
+    QStackedWidget *cameraStack;
+    QWidget *livePage;
+    QWidget *playbackPage;
+    QPushButton *liveViewBtn;
+    QPushButton *playbackViewBtn;
+    QLabel *playbackVideoLabel;
+    QComboBox *playbackDeviceCombo;
+    QComboBox *playbackDateCombo;
+    QPushButton *playbackRefreshBtn;
+    QPushButton *playbackPlayBtn;
     QVBoxLayout *mainLayout;
     QHBoxLayout *topLayout;
     QHBoxLayout *controlLayout;
@@ -70,8 +92,10 @@ private:
     QList<MediaObjectInfo> mediaObjectInfo;
     int currentIndex = 0;
     QString currentRTMPUrl;
+    QString playbackRootPath;
 
-    XVideoThread *videoThread; // 播放线程
+    XVideoThread *liveVideoThread;     // 实时监控播放线程
+    XVideoThread *playbackVideoThread; // 回放播放线程
 };
 
 #endif // PAGE_CAMERA_H

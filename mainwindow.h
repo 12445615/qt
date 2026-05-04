@@ -10,6 +10,7 @@
 #include "page_sensor.h"
 #include "page_mechinemanager.h"
 #include "page_resourcemanager.h"
+#include "ModuleStateMachine.h"
 
 class MainWindow : public QMainWindow
 {
@@ -29,6 +30,7 @@ private:
     PageMechineManager *mechinemanager;
     PageResourceManager *resourcemanager;
     PageSensor *sensor;
+    ModuleStateMachine *stateMachine;
 
 
 };

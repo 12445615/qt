@@ -1,32 +1,45 @@
 #ifndef PAGE_SENSOR_H
 #define PAGE_SENSOR_H
 
-#include <QWidget>
-#include <QLabel>
-#include <QVBoxLayout>
 #include <QGridLayout>
+#include <QLabel>
 #include <QTimer>
+#include <QVBoxLayout>
+#include <QWidget>
 
+#include "AliyunMqttClient.h"
 
 class PageSensor : public QWidget
 {
     Q_OBJECT
 
 public:
-    PageSensor(QWidget *parent=nullptr);
+    PageSensor(QWidget *parent = nullptr);
+
+signals:
+    void sensorConnectionStateChanged(bool ok, const QString &message);
+    void sensorAlarmStateChanged(bool ok, const QString &message);
 
 private slots:
-    void updateData();
+    void applySensorData(const AliyunSensorData &data);
+    void updateMqttState(QMqttClient::ClientState state);
+    void showMqttError(const QString &message);
+    void reconnectMqttIfNeeded();
 
 private:
+    void initMqttClient();
+    void updateStatusLabel(const QString &text, const QString &color);
+    static QString formatNumber(double value, int precision = 1);
+
+    QLabel *mqttStatusLabel;
     QLabel *tempValue;
     QLabel *humiValue;
     QLabel *smokeValue;
     QLabel *fireValue;
     QLabel *combustible_gasValue;
     QLabel *airpressureValue;
-    QTimer *timer;
+    AliyunMqttClient *mqttClient;
+    QTimer *mqttReconnectTimer;
 };
-
 
 #endif // PAGE_SENSOR_H

@@ -8,17 +8,26 @@
 #include <QFrame>
 #include <QTimer>
 
+#include "ModuleStateMachine.h"
+
 class PageHome : public QWidget
 {
     Q_OBJECT
 
 public:
     PageHome(QWidget *parent=nullptr);
+    void setStateMachine(ModuleStateMachine *stateMachine);
 
 private slots:
-    void updateStatus();  // 模拟状态更新
+    void applyModuleState(ModuleStateMachine::Module module,
+                          ModuleStateMachine::State state,
+                          const QString &message);
 
 private:
+    void updateIndicator(QLabel *icon, QLabel *label,
+                         ModuleStateMachine::State state,
+                         const QString &message);
+
     QLabel *cameraStatus;
     QLabel *aiStatus;
     QLabel *rtspStatus;
@@ -31,7 +40,7 @@ private:
     QLabel *sensorIcon;
     QLabel *alarmIcon;
 
-    QTimer *timer;
+    ModuleStateMachine *m_stateMachine = nullptr;
 };
 
 #endif

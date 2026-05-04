@@ -1,5 +1,4 @@
 #include "page_home.h"
-#include <QRandomGenerator>
 #include <QFont>
 #include <QVBoxLayout>
 #include <QGridLayout>
@@ -13,10 +12,10 @@ PageHome::PageHome(QWidget *parent) : QWidget(parent)
     title->setStyleSheet("font-size:28px;font-weight:bold;");
 
     // 初始化状态文字
-    cameraStatus = new QLabel("正常");
-    aiStatus     = new QLabel("运行中");
-    rtspStatus   = new QLabel("正常");
-    sensorStatus = new QLabel("正常");
+    cameraStatus = new QLabel("未检测");
+    aiStatus     = new QLabel("未启动");
+    rtspStatus   = new QLabel("未连接");
+    sensorStatus = new QLabel("未连接");
     alarmOverview= new QLabel("无");
 
     QList<QLabel*> statusLabels = {cameraStatus, aiStatus, rtspStatus, sensorStatus, alarmOverview};
@@ -30,7 +29,7 @@ PageHome::PageHome(QWidget *parent) : QWidget(parent)
     auto createIcon = []() {
         QLabel *icon = new QLabel;
         icon->setFixedSize(16,16);
-        icon->setStyleSheet("background-color:green; border-radius:8px;");
+        icon->setStyleSheet("background-color:gray; border-radius:8px;");
         return icon;
     };
 
@@ -54,7 +53,7 @@ PageHome::PageHome(QWidget *parent) : QWidget(parent)
     // 第二列: 状态文字
     grid->addWidget(new QLabel("摄像头状态:"), 0, 1);
     grid->addWidget(new QLabel("AI检测状态:"), 1, 1);
-    grid->addWidget(new QLabel("RTSP推流:"), 2, 1);
+    grid->addWidget(new QLabel("RTMP推流:"), 2, 1);
     grid->addWidget(new QLabel("传感器状态:"), 3, 1);
     grid->addWidget(new QLabel("最近报警:"), 4, 1);
 
@@ -71,40 +70,82 @@ PageHome::PageHome(QWidget *parent) : QWidget(parent)
     mainLayout->addLayout(grid);
     mainLayout->addStretch();
 
-    // 定时器模拟动态状态
-    timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, &PageHome::updateStatus);
-    timer->start(3000);
 }
 
-void PageHome::updateStatus()
+void PageHome::setStateMachine(ModuleStateMachine *stateMachine)
 {
-    QStringList cam = {"正常","离线","异常"};
-    QStringList ai  = {"运行中","停止","异常"};
-    QStringList rtsp= {"正常","中断","异常"};
-    QStringList sensor = {"正常","异常"};
-    QStringList alarm  = {"无","火焰报警","烟雾报警","可燃气体异常"};
+    if(m_stateMachine)
+        disconnect(m_stateMachine, nullptr, this, nullptr);
 
-    auto randomIndex = [](int size){ return QRandomGenerator::global()->bounded(size); };
+    m_stateMachine = stateMachine;
+    if(!m_stateMachine)
+        return;
 
-    cameraStatus->setText(cam[randomIndex(cam.size())]);
-    aiStatus->setText(ai[randomIndex(ai.size())]);
-    rtspStatus->setText(rtsp[randomIndex(rtsp.size())]);
-    sensorStatus->setText(sensor[randomIndex(sensor.size())]);
-    alarmOverview->setText(alarm[randomIndex(alarm.size())]);
+    connect(m_stateMachine, &ModuleStateMachine::moduleStateChanged,
+            this, &PageHome::applyModuleState);
 
-    // 更新指示灯颜色
-    auto updateIcon = [](QLabel *icon, const QString &status){
-        QString color = "green";
-        if(status.contains("异常") || status.contains("中断") || status.contains("离线")) color = "red";
-        else if(status.contains("停止")) color = "yellow";
-        icon->setStyleSheet(QString("background-color:%1;border-radius:8px;").arg(color));
-    };
+    applyModuleState(ModuleStateMachine::Camera,
+                     m_stateMachine->state(ModuleStateMachine::Camera),
+                     m_stateMachine->message(ModuleStateMachine::Camera));
+    applyModuleState(ModuleStateMachine::Ai,
+                     m_stateMachine->state(ModuleStateMachine::Ai),
+                     m_stateMachine->message(ModuleStateMachine::Ai));
+    applyModuleState(ModuleStateMachine::Rtmp,
+                     m_stateMachine->state(ModuleStateMachine::Rtmp),
+                     m_stateMachine->message(ModuleStateMachine::Rtmp));
+    applyModuleState(ModuleStateMachine::Sensor,
+                     m_stateMachine->state(ModuleStateMachine::Sensor),
+                     m_stateMachine->message(ModuleStateMachine::Sensor));
+    applyModuleState(ModuleStateMachine::Alarm,
+                     m_stateMachine->state(ModuleStateMachine::Alarm),
+                     m_stateMachine->message(ModuleStateMachine::Alarm));
+}
 
-    updateIcon(cameraIcon, cameraStatus->text());
-    updateIcon(aiIcon, aiStatus->text());
-    updateIcon(rtspIcon, rtspStatus->text());
-    updateIcon(sensorIcon, sensorStatus->text());
-    updateIcon(alarmIcon, alarmOverview->text());
+void PageHome::applyModuleState(ModuleStateMachine::Module module,
+                                ModuleStateMachine::State state,
+                                const QString &message)
+{
+    switch(module) {
+    case ModuleStateMachine::Camera:
+        updateIndicator(cameraIcon, cameraStatus, state, message);
+        break;
+    case ModuleStateMachine::Ai:
+        updateIndicator(aiIcon, aiStatus, state, message);
+        break;
+    case ModuleStateMachine::Rtmp:
+        updateIndicator(rtspIcon, rtspStatus, state, message);
+        break;
+    case ModuleStateMachine::Sensor:
+        updateIndicator(sensorIcon, sensorStatus, state, message);
+        break;
+    case ModuleStateMachine::Alarm:
+        updateIndicator(alarmIcon, alarmOverview, state, message);
+        break;
+    }
+}
 
+void PageHome::updateIndicator(QLabel *icon, QLabel *label,
+                               ModuleStateMachine::State state,
+                               const QString &message)
+{
+    QString color = "gray";
+    switch(state) {
+    case ModuleStateMachine::Unknown:
+        color = "gray";
+        break;
+    case ModuleStateMachine::Starting:
+    case ModuleStateMachine::Warning:
+        color = "#f0c674";
+        break;
+    case ModuleStateMachine::Running:
+        color = "#98c379";
+        break;
+    case ModuleStateMachine::Error:
+    case ModuleStateMachine::Stopped:
+        color = "#e06c75";
+        break;
+    }
+
+    label->setText(message.isEmpty() ? QStringLiteral("未知") : message);
+    icon->setStyleSheet(QStringLiteral("background-color:%1;border-radius:8px;").arg(color));
 }

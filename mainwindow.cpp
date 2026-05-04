@@ -5,7 +5,7 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    this->setGeometry(0,0,800,480);
+    this->setGeometry(0,0,1280,720);
     central = new QWidget(this);
 
     QHBoxLayout *layout = new QHBoxLayout(central);
@@ -20,11 +20,20 @@ MainWindow::MainWindow(QWidget *parent)
 
     stack = new QStackedWidget;
 
+    stateMachine = new ModuleStateMachine(this);
     home = new  PageHome();
     camera = new PageCamera();
     mechinemanager = new PageMechineManager();
     resourcemanager = new PageResourceManager();
     sensor = new PageSensor();
+    home->setStateMachine(stateMachine);
+
+    stateMachine->transition(ModuleStateMachine::Camera,
+                             ModuleStateMachine::Running,
+                             QStringLiteral("正常"));
+    stateMachine->transition(ModuleStateMachine::Ai,
+                             ModuleStateMachine::Stopped,
+                             QStringLiteral("未接入"));
 
     stack->addWidget(home);
     stack->addWidget(camera);
@@ -39,6 +48,34 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(menu,&QListWidget::currentRowChanged,
             stack,&QStackedWidget::setCurrentIndex);
+
+    connect(camera, &PageCamera::liveStreamStateChanged,
+            this, [this](bool ok, const QString &message){
+                stateMachine->transition(ModuleStateMachine::Rtmp,
+                                         ok ? ModuleStateMachine::Running : ModuleStateMachine::Error,
+                                         message);
+            });
+
+    connect(camera, &PageCamera::playbackStateChanged,
+            this, [this](bool ok, const QString &message){
+                stateMachine->transition(ModuleStateMachine::Camera,
+                                         ok ? ModuleStateMachine::Running : ModuleStateMachine::Warning,
+                                         ok ? QStringLiteral("回放正常") : message);
+            });
+
+    connect(sensor, &PageSensor::sensorConnectionStateChanged,
+            this, [this](bool ok, const QString &message){
+                stateMachine->transition(ModuleStateMachine::Sensor,
+                                         ok ? ModuleStateMachine::Running : ModuleStateMachine::Warning,
+                                         message);
+            });
+
+    connect(sensor, &PageSensor::sensorAlarmStateChanged,
+            this, [this](bool ok, const QString &message){
+                stateMachine->transition(ModuleStateMachine::Alarm,
+                                         ok ? ModuleStateMachine::Running : ModuleStateMachine::Error,
+                                         message);
+            });
 }
 
 MainWindow::~MainWindow() {}
