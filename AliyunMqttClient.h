@@ -24,9 +24,13 @@ struct AliyunSensorData
 
     bool hasCombustibleGas = false;
     bool combustibleGasDetected = false;
+    double combustibleGas = 0.0;
 
     bool hasAirPressure = false;
     double airPressure = 0.0;
+
+    bool hasAiDetectState = false;
+    int aiDetectState = 0;
 
     QJsonObject rawParams;
 };

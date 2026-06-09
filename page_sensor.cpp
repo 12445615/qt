@@ -6,12 +6,13 @@
 PageSensor::PageSensor(QWidget *parent)
     : QWidget(parent),
       mqttStatusLabel(new QLabel(QStringLiteral("MQTT: 未配置"), this)),
-      tempValue(new QLabel(QStringLiteral("25 ℃"), this)),
-      humiValue(new QLabel(QStringLiteral("60 %"), this)),
-      smokeValue(new QLabel(QStringLiteral("正常"), this)),
+      tempValue(new QLabel(QStringLiteral("-- ℃"), this)),
+      humiValue(new QLabel(QStringLiteral("-- %"), this)),
+      smokeValue(new QLabel(QStringLiteral("--"), this)),
       fireValue(new QLabel(QStringLiteral("未检测"), this)),
-      combustible_gasValue(new QLabel(QStringLiteral("未检测"), this)),
-      airpressureValue(new QLabel(QStringLiteral("950 hPa"), this)),
+      combustible_gasValue(new QLabel(QStringLiteral("--"), this)),
+      airpressureValue(new QLabel(QStringLiteral("-- hPa"), this)),
+      aiDetectStateValue(new QLabel(QStringLiteral("无目标"), this)),
       mqttClient(new AliyunMqttClient(this)),
       mqttReconnectTimer(new QTimer(this))
 {
@@ -30,7 +31,8 @@ PageSensor::PageSensor(QWidget *parent)
         smokeValue,
         fireValue,
         airpressureValue,
-        combustible_gasValue
+        combustible_gasValue,
+        aiDetectStateValue
     };
 
     for (QLabel *label : labels) {
@@ -64,6 +66,7 @@ PageSensor::PageSensor(QWidget *parent)
     grid->addWidget(createCard(QStringLiteral("火焰检测"), fireValue), 1, 1);
     grid->addWidget(createCard(QStringLiteral("可燃气体检测"), combustible_gasValue), 2, 0);
     grid->addWidget(createCard(QStringLiteral("气压检测"), airpressureValue), 2, 1);
+    grid->addWidget(createCard(QStringLiteral("AI状态"), aiDetectStateValue), 3, 0, 1, 2);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addWidget(title);
@@ -93,23 +96,20 @@ void PageSensor::applySensorData(const AliyunSensorData &data)
     if (data.hasHumidity)
         humiValue->setText(formatNumber(data.humidity) + QStringLiteral(" %"));
 
-    if (data.hasSmoke) {
-        smokeValue->setText(data.smoke > 0.0
-                                ? QStringLiteral("异常")
-                                : QStringLiteral("正常"));
-    }
+    if (data.hasSmoke)
+        smokeValue->setText(formatNumber(data.smoke) + QStringLiteral(" %"));
 
     if (data.hasFire)
         fireValue->setText(data.fireDetected ? QStringLiteral("检测到火焰") : QStringLiteral("未检测"));
 
-    if (data.hasCombustibleGas) {
-        combustible_gasValue->setText(data.combustibleGasDetected
-                                          ? QStringLiteral("检测到可燃气体")
-                                          : QStringLiteral("未检测"));
-    }
+    if (data.hasCombustibleGas)
+        combustible_gasValue->setText(formatNumber(data.combustibleGas) + QStringLiteral(" ppm"));
 
     if (data.hasAirPressure)
         airpressureValue->setText(formatNumber(data.airPressure) + QStringLiteral(" hPa"));
+
+    if (data.hasAiDetectState)
+        aiDetectStateValue->setText(aiDetectStateText(data.aiDetectState));
 
     const bool alarm =
         (data.hasSmoke && data.smoke > 0.0)
@@ -214,4 +214,28 @@ void PageSensor::updateStatusLabel(const QString &text, const QString &color)
 QString PageSensor::formatNumber(double value, int precision)
 {
     return QString::number(value, 'f', precision);
+}
+
+QString PageSensor::aiDetectStateText(int state)
+{
+    switch (state) {
+    case 0:
+        return QStringLiteral("无目标");
+    case 1:
+        return QStringLiteral("PPE合规");
+    case 2:
+        return QStringLiteral("未戴安全帽");
+    case 3:
+        return QStringLiteral("未穿防护服");
+    case 4:
+        return QStringLiteral("同时PPE不合规");
+    case 5:
+        return QStringLiteral("工作区火光");
+    case 6:
+        return QStringLiteral("非工作区火光");
+    case 7:
+        return QStringLiteral("危险区人员闯入");
+    default:
+        return QStringLiteral("未知状态 %1").arg(state);
+    }
 }

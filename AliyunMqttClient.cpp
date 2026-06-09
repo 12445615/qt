@@ -405,6 +405,18 @@ bool AliyunMqttClient::parseSensorData(const QJsonObject &root, AliyunSensorData
         }
     };
 
+    auto readInt = [&params,&matched](const QStringList &keys,bool *hasValue,int *value) {
+        for(const QString &key:keys) {
+            const QJsonValue jsonValue = params.value(key);
+            if(jsonValue.isDouble()) {
+                *hasValue = true;
+                *value = jsonValue.toInt();
+                matched = true;
+                return;
+            }
+        }
+    };
+
     readNumber({QStringLiteral("temperature"),QStringLiteral("temp")},
                &data->hasTemperature,&data->temperature);
     readNumber({QStringLiteral("humidity"),QStringLiteral("humi"),QStringLiteral("Humidity")},
@@ -413,11 +425,15 @@ bool AliyunMqttClient::parseSensorData(const QJsonObject &root, AliyunSensorData
                &data->hasSmoke,&data->smoke);
     readNumber({QStringLiteral("airPressure"),QStringLiteral("airpressure"),QStringLiteral("pressure")},
                &data->hasAirPressure,&data->airPressure);
+    readNumber({QStringLiteral("CombustibleGasCheck")},
+               &data->hasCombustibleGas,&data->combustibleGas);
 
     readBool({QStringLiteral("fire"),QStringLiteral("fireDetected"),QStringLiteral("flame")},
              &data->hasFire,&data->fireDetected);
     readBool({QStringLiteral("combustibleGas"),QStringLiteral("combustible_gas"),QStringLiteral("gas")},
              &data->hasCombustibleGas,&data->combustibleGasDetected);
+    readInt({QStringLiteral("AiDetectState")},
+            &data->hasAiDetectState,&data->aiDetectState);
 
     return matched;
 }
