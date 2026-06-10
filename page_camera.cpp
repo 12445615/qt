@@ -10,9 +10,15 @@
 #include <QDebug>
 #include <QLabel>
 #include <QStandardPaths>
+#include <QSettings>
 #include <cstdio>
 
 #include "XVideoThread.h"
+
+namespace {
+const char *kDefaultRtmpUrl = "rtmp://10.36.113.231:1935/fire_live/test";
+const char *kRtmpSettingsKey = "camera/rtmp_url";
+}
 
 PageCamera::PageCamera(QWidget *parent) : QWidget(parent)
 {
@@ -42,6 +48,8 @@ PageCamera::PageCamera(QWidget *parent) : QWidget(parent)
         QString url = rtmpLineEdit->text().trimmed();
         if(url.isEmpty()) return;
 
+        QSettings settings;
+        settings.setValue(kRtmpSettingsKey, url);
         currentRTMPUrl = url;
         startVideoPlayback(liveVideoThread,
                            url,
@@ -161,6 +169,8 @@ void PageCamera::videoLayout()
     QHBoxLayout *rtmpLayout = new QHBoxLayout();
     rtmpLineEdit = new QLineEdit(this);
     rtmpLineEdit->setPlaceholderText("请输入 RTMP 地址，例如 rtmp://192.168.1.100/live/stream");
+    QSettings settings;
+    rtmpLineEdit->setText(settings.value(kRtmpSettingsKey, QString::fromLatin1(kDefaultRtmpUrl)).toString());
 
     rtmpPlayBtn = new QPushButton("播放", this);
 

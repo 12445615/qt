@@ -1,85 +1,110 @@
 #include "page_home.h"
+
 #include <QFont>
-#include <QVBoxLayout>
 #include <QGridLayout>
+#include <QVBoxLayout>
 
 PageHome::PageHome(QWidget *parent) : QWidget(parent)
 {
-    this->setStyleSheet("background-color:#1e1e2f;color:white;");
+    setStyleSheet(QStringLiteral("background-color:#1e1e2f;color:white;"));
 
-    QLabel *title = new QLabel("智能多模态环境监测与消防预警系统");
+    QLabel *title = new QLabel(QStringLiteral("智能多模态环境监测与消防预警系统"));
     title->setAlignment(Qt::AlignCenter);
-    title->setStyleSheet("font-size:28px;font-weight:bold;");
+    title->setStyleSheet(QStringLiteral("font-size:28px;font-weight:bold;"));
 
-    // 初始化状态文字
-    cameraStatus = new QLabel("未检测");
-    aiStatus     = new QLabel("未启动");
-    rtspStatus   = new QLabel("未连接");
-    sensorStatus = new QLabel("未连接");
-    alarmOverview= new QLabel("无");
+    mqttStatus = new QLabel(QStringLiteral("未连接"));
+    dataTimeStatus = new QLabel(QStringLiteral("--"));
+    systemSafetyStatus = new QLabel(QStringLiteral("未知"));
+    alarmOverview = new QLabel(QStringLiteral("无"));
+    aiStatus = new QLabel(QStringLiteral("无目标"));
+    environmentStatus = new QLabel(QStringLiteral("等待数据"));
+    rtmpStatus = new QLabel(QStringLiteral("未连接"));
+    playbackStatus = new QLabel(QStringLiteral("未检测"));
 
-    QList<QLabel*> statusLabels = {cameraStatus, aiStatus, rtspStatus, sensorStatus, alarmOverview};
-    for(auto l : statusLabels)
-    {
-        l->setAlignment(Qt::AlignLeft);
-        l->setStyleSheet("font-size:20px;");
+    QList<QLabel*> statusLabels = {
+        mqttStatus,
+        dataTimeStatus,
+        systemSafetyStatus,
+        alarmOverview,
+        aiStatus,
+        environmentStatus,
+        rtmpStatus,
+        playbackStatus
+    };
+    for (QLabel *label : statusLabels) {
+        label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        label->setStyleSheet(QStringLiteral("font-size:20px;"));
+        label->setMinimumHeight(30);
     }
 
-    // 初始化状态指示灯
     auto createIcon = []() {
         QLabel *icon = new QLabel;
-        icon->setFixedSize(16,16);
-        icon->setStyleSheet("background-color:gray; border-radius:8px;");
+        icon->setFixedSize(16, 16);
+        icon->setStyleSheet(QStringLiteral("background-color:gray;border-radius:8px;"));
         return icon;
     };
 
-    cameraIcon = createIcon();
-    aiIcon     = createIcon();
-    rtspIcon   = createIcon();
-    sensorIcon = createIcon();
-    alarmIcon  = createIcon();
+    mqttIcon = createIcon();
+    dataTimeIcon = createIcon();
+    systemSafetyIcon = createIcon();
+    alarmIcon = createIcon();
+    aiIcon = createIcon();
+    environmentIcon = createIcon();
+    rtmpIcon = createIcon();
+    playbackIcon = createIcon();
 
     QGridLayout *grid = new QGridLayout;
-    grid->setHorizontalSpacing(30);
-    grid->setVerticalSpacing(20);
+    grid->setHorizontalSpacing(28);
+    grid->setVerticalSpacing(18);
+    grid->setColumnStretch(2, 1);
+    grid->setColumnStretch(5, 1);
 
-    // 第一列: 指示灯
-    grid->addWidget(cameraIcon, 0, 0);
-    grid->addWidget(aiIcon, 1, 0);
-    grid->addWidget(rtspIcon, 2, 0);
-    grid->addWidget(sensorIcon, 3, 0);
-    grid->addWidget(alarmIcon, 4, 0);
+    auto addRow = [grid](int row,
+                         QLabel *leftIcon,
+                         const QString &leftTitle,
+                         QLabel *leftValue,
+                         QLabel *rightIcon,
+                         const QString &rightTitle,
+                         QLabel *rightValue) {
+        QLabel *leftLabel = new QLabel(leftTitle);
+        QLabel *rightLabel = new QLabel(rightTitle);
+        leftLabel->setStyleSheet(QStringLiteral("font-size:16px;font-weight:bold;"));
+        rightLabel->setStyleSheet(QStringLiteral("font-size:16px;font-weight:bold;"));
 
-    // 第二列: 状态文字
-    grid->addWidget(new QLabel("摄像头状态:"), 0, 1);
-    grid->addWidget(new QLabel("AI检测状态:"), 1, 1);
-    grid->addWidget(new QLabel("RTMP推流:"), 2, 1);
-    grid->addWidget(new QLabel("传感器状态:"), 3, 1);
-    grid->addWidget(new QLabel("最近报警:"), 4, 1);
+        grid->addWidget(leftIcon, row, 0);
+        grid->addWidget(leftLabel, row, 1);
+        grid->addWidget(leftValue, row, 2);
+        grid->addWidget(rightIcon, row, 3);
+        grid->addWidget(rightLabel, row, 4);
+        grid->addWidget(rightValue, row, 5);
+    };
 
-    grid->addWidget(cameraStatus, 0, 2);
-    grid->addWidget(aiStatus, 1, 2);
-    grid->addWidget(rtspStatus, 2, 2);
-    grid->addWidget(sensorStatus, 3, 2);
-    grid->addWidget(alarmOverview, 4, 2);
+    addRow(0, mqttIcon, QStringLiteral("MQTT连接:"), mqttStatus,
+           dataTimeIcon, QStringLiteral("数据更新时间:"), dataTimeStatus);
+    addRow(1, systemSafetyIcon, QStringLiteral("系统安全状态:"), systemSafetyStatus,
+           alarmIcon, QStringLiteral("最近报警:"), alarmOverview);
+    addRow(2, aiIcon, QStringLiteral("AI识别状态:"), aiStatus,
+           environmentIcon, QStringLiteral("环境数据状态:"), environmentStatus);
+    addRow(3, rtmpIcon, QStringLiteral("视频流状态:"), rtmpStatus,
+           playbackIcon, QStringLiteral("录像回放状态:"), playbackStatus);
 
-    // 主布局
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addWidget(title);
     mainLayout->addSpacing(20);
     mainLayout->addLayout(grid);
     mainLayout->addStretch();
-
 }
 
 void PageHome::setStateMachine(ModuleStateMachine *stateMachine)
 {
-    if(m_stateMachine)
+    if (m_stateMachine) {
         disconnect(m_stateMachine, nullptr, this, nullptr);
+    }
 
     m_stateMachine = stateMachine;
-    if(!m_stateMachine)
+    if (!m_stateMachine) {
         return;
+    }
 
     connect(m_stateMachine, &ModuleStateMachine::moduleStateChanged,
             this, &PageHome::applyModuleState);
@@ -87,9 +112,6 @@ void PageHome::setStateMachine(ModuleStateMachine *stateMachine)
     applyModuleState(ModuleStateMachine::Camera,
                      m_stateMachine->state(ModuleStateMachine::Camera),
                      m_stateMachine->message(ModuleStateMachine::Camera));
-    applyModuleState(ModuleStateMachine::Ai,
-                     m_stateMachine->state(ModuleStateMachine::Ai),
-                     m_stateMachine->message(ModuleStateMachine::Ai));
     applyModuleState(ModuleStateMachine::Rtmp,
                      m_stateMachine->state(ModuleStateMachine::Rtmp),
                      m_stateMachine->message(ModuleStateMachine::Rtmp));
@@ -101,25 +123,49 @@ void PageHome::setStateMachine(ModuleStateMachine *stateMachine)
                      m_stateMachine->message(ModuleStateMachine::Alarm));
 }
 
+void PageHome::updateCloudSummary(const QString &dataTime,
+                                  const QString &systemSafety,
+                                  const QString &recentAlarm,
+                                  const QString &aiState,
+                                  const QString &environmentState)
+{
+    dataTimeStatus->setText(dataTime.isEmpty() ? QStringLiteral("--") : dataTime);
+    aiStatus->setText(aiState.isEmpty() ? QStringLiteral("无目标") : aiState);
+    environmentStatus->setText(environmentState.isEmpty() ? QStringLiteral("等待数据") : environmentState);
+    systemSafetyStatus->setText(systemSafety.isEmpty() ? QStringLiteral("未知") : systemSafety);
+    alarmOverview->setText(recentAlarm.isEmpty() ? QStringLiteral("无") : recentAlarm);
+
+    setPlainStatus(dataTimeIcon, dataTimeStatus, dataTimeStatus->text(), QStringLiteral("#98c379"));
+    setPlainStatus(aiIcon, aiStatus, aiStatus->text(),
+                   aiStatus->text() == QStringLiteral("无目标") ? QStringLiteral("#98c379") : QStringLiteral("#f0c674"));
+    setPlainStatus(environmentIcon, environmentStatus, environmentStatus->text(),
+                   environmentStatus->text() == QStringLiteral("正常") ? QStringLiteral("#98c379") : QStringLiteral("#f0c674"));
+    setPlainStatus(systemSafetyIcon, systemSafetyStatus, systemSafetyStatus->text(),
+                   systemSafetyStatus->text() == QStringLiteral("正常") ? QStringLiteral("#98c379") : QStringLiteral("#e06c75"));
+    setPlainStatus(alarmIcon, alarmOverview, alarmOverview->text(),
+                   alarmOverview->text() == QStringLiteral("无") ? QStringLiteral("#98c379") : QStringLiteral("#e06c75"));
+}
+
 void PageHome::applyModuleState(ModuleStateMachine::Module module,
                                 ModuleStateMachine::State state,
                                 const QString &message)
 {
-    switch(module) {
+    switch (module) {
     case ModuleStateMachine::Camera:
-        updateIndicator(cameraIcon, cameraStatus, state, message);
+        updateIndicator(playbackIcon, playbackStatus, state, message);
         break;
     case ModuleStateMachine::Ai:
-        updateIndicator(aiIcon, aiStatus, state, message);
         break;
     case ModuleStateMachine::Rtmp:
-        updateIndicator(rtspIcon, rtspStatus, state, message);
+        updateIndicator(rtmpIcon, rtmpStatus, state, message);
         break;
     case ModuleStateMachine::Sensor:
-        updateIndicator(sensorIcon, sensorStatus, state, message);
+        updateIndicator(mqttIcon, mqttStatus, state, message);
         break;
     case ModuleStateMachine::Alarm:
-        updateIndicator(alarmIcon, alarmOverview, state, message);
+        if (message != QStringLiteral("无")) {
+            updateIndicator(alarmIcon, alarmOverview, state, message);
+        }
         break;
     }
 }
@@ -128,24 +174,31 @@ void PageHome::updateIndicator(QLabel *icon, QLabel *label,
                                ModuleStateMachine::State state,
                                const QString &message)
 {
-    QString color = "gray";
-    switch(state) {
+    QString color = QStringLiteral("gray");
+    switch (state) {
     case ModuleStateMachine::Unknown:
-        color = "gray";
+        color = QStringLiteral("gray");
         break;
     case ModuleStateMachine::Starting:
     case ModuleStateMachine::Warning:
-        color = "#f0c674";
+        color = QStringLiteral("#f0c674");
         break;
     case ModuleStateMachine::Running:
-        color = "#98c379";
+        color = QStringLiteral("#98c379");
         break;
     case ModuleStateMachine::Error:
     case ModuleStateMachine::Stopped:
-        color = "#e06c75";
+        color = QStringLiteral("#e06c75");
         break;
     }
 
-    label->setText(message.isEmpty() ? QStringLiteral("未知") : message);
+    setPlainStatus(icon, label, message.isEmpty() ? QStringLiteral("未知") : message, color);
+}
+
+void PageHome::setPlainStatus(QLabel *icon, QLabel *label,
+                              const QString &message,
+                              const QString &color)
+{
+    label->setText(message);
     icon->setStyleSheet(QStringLiteral("background-color:%1;border-radius:8px;").arg(color));
 }

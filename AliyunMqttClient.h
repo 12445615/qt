@@ -32,6 +32,9 @@ struct AliyunSensorData
     bool hasAiDetectState = false;
     int aiDetectState = 0;
 
+    bool hasAlarmState = false;
+    int alarmState = 0;
+
     QJsonObject rawParams;
 };
 

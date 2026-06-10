@@ -76,6 +76,9 @@ MainWindow::MainWindow(QWidget *parent)
                                          ok ? ModuleStateMachine::Running : ModuleStateMachine::Error,
                                          message);
             });
+
+    connect(sensor, &PageSensor::homeSummaryUpdated,
+            home, &PageHome::updateCloudSummary);
 }
 
 MainWindow::~MainWindow() {}

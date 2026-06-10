@@ -1,5 +1,6 @@
 #include "page_sensor.h"
 
+#include <QDateTime>
 #include <QFrame>
 #include <QProcessEnvironment>
 
@@ -9,7 +10,6 @@ PageSensor::PageSensor(QWidget *parent)
       tempValue(new QLabel(QStringLiteral("-- ℃"), this)),
       humiValue(new QLabel(QStringLiteral("-- %"), this)),
       smokeValue(new QLabel(QStringLiteral("--"), this)),
-      fireValue(new QLabel(QStringLiteral("未检测"), this)),
       combustible_gasValue(new QLabel(QStringLiteral("--"), this)),
       airpressureValue(new QLabel(QStringLiteral("-- hPa"), this)),
       aiDetectStateValue(new QLabel(QStringLiteral("无目标"), this)),
@@ -29,7 +29,6 @@ PageSensor::PageSensor(QWidget *parent)
         tempValue,
         humiValue,
         smokeValue,
-        fireValue,
         airpressureValue,
         combustible_gasValue,
         aiDetectStateValue
@@ -63,10 +62,9 @@ PageSensor::PageSensor(QWidget *parent)
     grid->addWidget(createCard(QStringLiteral("温度"), tempValue), 0, 0);
     grid->addWidget(createCard(QStringLiteral("湿度"), humiValue), 0, 1);
     grid->addWidget(createCard(QStringLiteral("烟雾浓度"), smokeValue), 1, 0);
-    grid->addWidget(createCard(QStringLiteral("火焰检测"), fireValue), 1, 1);
+    grid->addWidget(createCard(QStringLiteral("AI状态"), aiDetectStateValue), 1, 1);
     grid->addWidget(createCard(QStringLiteral("可燃气体检测"), combustible_gasValue), 2, 0);
     grid->addWidget(createCard(QStringLiteral("气压检测"), airpressureValue), 2, 1);
-    grid->addWidget(createCard(QStringLiteral("AI状态"), aiDetectStateValue), 3, 0, 1, 2);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addWidget(title);
@@ -99,9 +97,6 @@ void PageSensor::applySensorData(const AliyunSensorData &data)
     if (data.hasSmoke)
         smokeValue->setText(formatNumber(data.smoke) + QStringLiteral(" %"));
 
-    if (data.hasFire)
-        fireValue->setText(data.fireDetected ? QStringLiteral("检测到火焰") : QStringLiteral("未检测"));
-
     if (data.hasCombustibleGas)
         combustible_gasValue->setText(formatNumber(data.combustibleGas) + QStringLiteral(" ppm"));
 
@@ -111,13 +106,46 @@ void PageSensor::applySensorData(const AliyunSensorData &data)
     if (data.hasAiDetectState)
         aiDetectStateValue->setText(aiDetectStateText(data.aiDetectState));
 
-    const bool alarm =
-        (data.hasSmoke && data.smoke > 0.0)
-        || (data.hasFire && data.fireDetected)
-        || (data.hasCombustibleGas && data.combustibleGasDetected);
+    QStringList environmentWarnings;
+    if (data.hasSmoke && data.smoke > 0.0)
+        environmentWarnings << QStringLiteral("烟雾异常");
+    if (data.hasCombustibleGas && data.combustibleGas > 0.0)
+        environmentWarnings << QStringLiteral("可燃气体异常");
+    if (data.hasTemperature && data.temperature >= 60.0)
+        environmentWarnings << QStringLiteral("温度异常");
+
+    const QString aiText = data.hasAiDetectState
+        ? aiDetectStateText(data.aiDetectState)
+        : aiDetectStateValue->text();
+    const QString environmentText = environmentWarnings.isEmpty()
+        ? QStringLiteral("正常")
+        : environmentWarnings.join(QStringLiteral("、"));
+
+    QString recentAlarm = QStringLiteral("无");
+    if (data.hasAiDetectState && data.aiDetectState != 0) {
+        recentAlarm = aiText;
+    } else if (!environmentWarnings.isEmpty()) {
+        recentAlarm = environmentText;
+    } else if (data.hasFire && data.fireDetected) {
+        recentAlarm = QStringLiteral("火焰报警");
+    } else if (data.hasAlarmState && data.alarmState != 0) {
+        recentAlarm = QStringLiteral("设备报警");
+    }
+
+    const bool alarm = (data.hasAlarmState && data.alarmState != 0)
+        || (data.hasAiDetectState && data.aiDetectState != 0)
+        || !environmentWarnings.isEmpty()
+        || (data.hasFire && data.fireDetected);
+    const QString systemSafety = alarm ? QStringLiteral("报警") : QStringLiteral("正常");
+
+    emit homeSummaryUpdated(QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")),
+                            systemSafety,
+                            recentAlarm,
+                            aiText,
+                            environmentText);
 
     if(alarm)
-        emit sensorAlarmStateChanged(false, QStringLiteral("传感器报警"));
+        emit sensorAlarmStateChanged(false, recentAlarm);
     else
         emit sensorAlarmStateChanged(true, QStringLiteral("无"));
 }

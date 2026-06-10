@@ -434,6 +434,8 @@ bool AliyunMqttClient::parseSensorData(const QJsonObject &root, AliyunSensorData
              &data->hasCombustibleGas,&data->combustibleGasDetected);
     readInt({QStringLiteral("AiDetectState")},
             &data->hasAiDetectState,&data->aiDetectState);
+    readInt({QStringLiteral("AlarmState")},
+            &data->hasAlarmState,&data->alarmState);
 
     return matched;
 }

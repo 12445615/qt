@@ -17,6 +17,11 @@ class PageHome : public QWidget
 public:
     PageHome(QWidget *parent=nullptr);
     void setStateMachine(ModuleStateMachine *stateMachine);
+    void updateCloudSummary(const QString &dataTime,
+                            const QString &systemSafety,
+                            const QString &recentAlarm,
+                            const QString &aiState,
+                            const QString &environmentState);
 
 private slots:
     void applyModuleState(ModuleStateMachine::Module module,
@@ -27,18 +32,27 @@ private:
     void updateIndicator(QLabel *icon, QLabel *label,
                          ModuleStateMachine::State state,
                          const QString &message);
+    void setPlainStatus(QLabel *icon, QLabel *label,
+                        const QString &message,
+                        const QString &color);
 
-    QLabel *cameraStatus;
-    QLabel *aiStatus;
-    QLabel *rtspStatus;
-    QLabel *sensorStatus;
+    QLabel *mqttStatus;
+    QLabel *dataTimeStatus;
+    QLabel *systemSafetyStatus;
     QLabel *alarmOverview;
+    QLabel *aiStatus;
+    QLabel *environmentStatus;
+    QLabel *rtmpStatus;
+    QLabel *playbackStatus;
 
-    QLabel *cameraIcon;
-    QLabel *aiIcon;
-    QLabel *rtspIcon;
-    QLabel *sensorIcon;
+    QLabel *mqttIcon;
+    QLabel *dataTimeIcon;
+    QLabel *systemSafetyIcon;
     QLabel *alarmIcon;
+    QLabel *aiIcon;
+    QLabel *environmentIcon;
+    QLabel *rtmpIcon;
+    QLabel *playbackIcon;
 
     ModuleStateMachine *m_stateMachine = nullptr;
 };

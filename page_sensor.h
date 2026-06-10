@@ -19,6 +19,11 @@ public:
 signals:
     void sensorConnectionStateChanged(bool ok, const QString &message);
     void sensorAlarmStateChanged(bool ok, const QString &message);
+    void homeSummaryUpdated(const QString &dataTime,
+                            const QString &systemSafety,
+                            const QString &recentAlarm,
+                            const QString &aiState,
+                            const QString &environmentState);
 
 private slots:
     void applySensorData(const AliyunSensorData &data);
@@ -36,7 +41,6 @@ private:
     QLabel *tempValue;
     QLabel *humiValue;
     QLabel *smokeValue;
-    QLabel *fireValue;
     QLabel *combustible_gasValue;
     QLabel *airpressureValue;
     QLabel *aiDetectStateValue;
