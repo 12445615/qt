@@ -36,13 +36,15 @@ private:
     void updateStatusLabel(const QString &text, const QString &color);
     static QString formatNumber(double value, int precision = 1);
     static QString aiDetectStateText(int state);
+    static QString alarmStateText(int state);
+    static QString powerSwitchText(int state);
 
     QLabel *mqttStatusLabel;
     QLabel *tempValue;
-    QLabel *humiValue;
+    QLabel *alarmStateValue;
     QLabel *smokeValue;
     QLabel *combustible_gasValue;
-    QLabel *airpressureValue;
+    QLabel *powerStateValue;
     QLabel *aiDetectStateValue;
     AliyunMqttClient *mqttClient;
     QTimer *mqttReconnectTimer;

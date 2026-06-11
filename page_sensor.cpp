@@ -1,17 +1,22 @@
-#include "page_sensor.h"
+﻿#include "page_sensor.h"
 
 #include <QDateTime>
 #include <QFrame>
 #include <QProcessEnvironment>
 
+namespace {
+constexpr double kSmokeAlarmThreshold = 70.0;
+constexpr double kCombustibleGasAlarmThreshold = 3000.0;
+}
+
 PageSensor::PageSensor(QWidget *parent)
     : QWidget(parent),
       mqttStatusLabel(new QLabel(QStringLiteral("MQTT: 未配置"), this)),
       tempValue(new QLabel(QStringLiteral("-- ℃"), this)),
-      humiValue(new QLabel(QStringLiteral("-- %"), this)),
+      alarmStateValue(new QLabel(QStringLiteral("--"), this)),
       smokeValue(new QLabel(QStringLiteral("--"), this)),
       combustible_gasValue(new QLabel(QStringLiteral("--"), this)),
-      airpressureValue(new QLabel(QStringLiteral("-- hPa"), this)),
+      powerStateValue(new QLabel(QStringLiteral("--"), this)),
       aiDetectStateValue(new QLabel(QStringLiteral("无目标"), this)),
       mqttClient(new AliyunMqttClient(this)),
       mqttReconnectTimer(new QTimer(this))
@@ -27,9 +32,9 @@ PageSensor::PageSensor(QWidget *parent)
 
     QList<QLabel *> labels = {
         tempValue,
-        humiValue,
+        alarmStateValue,
         smokeValue,
-        airpressureValue,
+        powerStateValue,
         combustible_gasValue,
         aiDetectStateValue
     };
@@ -60,11 +65,11 @@ PageSensor::PageSensor(QWidget *parent)
 
     QGridLayout *grid = new QGridLayout();
     grid->addWidget(createCard(QStringLiteral("温度"), tempValue), 0, 0);
-    grid->addWidget(createCard(QStringLiteral("湿度"), humiValue), 0, 1);
+    grid->addWidget(createCard(QStringLiteral("报警状态"), alarmStateValue), 0, 1);
     grid->addWidget(createCard(QStringLiteral("烟雾浓度"), smokeValue), 1, 0);
     grid->addWidget(createCard(QStringLiteral("AI状态"), aiDetectStateValue), 1, 1);
     grid->addWidget(createCard(QStringLiteral("可燃气体检测"), combustible_gasValue), 2, 0);
-    grid->addWidget(createCard(QStringLiteral("气压检测"), airpressureValue), 2, 1);
+    grid->addWidget(createCard(QStringLiteral("电源状态"), powerStateValue), 2, 1);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addWidget(title);
@@ -91,25 +96,25 @@ void PageSensor::applySensorData(const AliyunSensorData &data)
     if (data.hasTemperature)
         tempValue->setText(formatNumber(data.temperature) + QStringLiteral(" ℃"));
 
-    if (data.hasHumidity)
-        humiValue->setText(formatNumber(data.humidity) + QStringLiteral(" %"));
-
     if (data.hasSmoke)
         smokeValue->setText(formatNumber(data.smoke) + QStringLiteral(" %"));
 
     if (data.hasCombustibleGas)
         combustible_gasValue->setText(formatNumber(data.combustibleGas) + QStringLiteral(" ppm"));
 
-    if (data.hasAirPressure)
-        airpressureValue->setText(formatNumber(data.airPressure) + QStringLiteral(" hPa"));
-
     if (data.hasAiDetectState)
         aiDetectStateValue->setText(aiDetectStateText(data.aiDetectState));
 
+    if (data.hasAlarmState)
+        alarmStateValue->setText(alarmStateText(data.alarmState));
+
+    if (data.hasPowerSwitch)
+        powerStateValue->setText(powerSwitchText(data.powerSwitch));
+
     QStringList environmentWarnings;
-    if (data.hasSmoke && data.smoke > 0.0)
+    if (data.hasSmoke && data.smoke >= kSmokeAlarmThreshold)
         environmentWarnings << QStringLiteral("烟雾异常");
-    if (data.hasCombustibleGas && data.combustibleGas > 0.0)
+    if (data.hasCombustibleGas && data.combustibleGas >= kCombustibleGasAlarmThreshold)
         environmentWarnings << QStringLiteral("可燃气体异常");
     if (data.hasTemperature && data.temperature >= 60.0)
         environmentWarnings << QStringLiteral("温度异常");
@@ -202,15 +207,20 @@ void PageSensor::initMqttClient()
 
     const QString productKey = env.value(QStringLiteral("ALIYUN_PRODUCT_KEY"),QStringLiteral("k29ovUMboAH"));
     const QString deviceName = env.value(QStringLiteral("ALIYUN_DEVICE_NAME"),QStringLiteral("0122-qt"));
-    const QString deviceSecret = env.value(QStringLiteral("ALIYUN_DEVICE_SECRET"),QStringLiteral("28971840ce3e479526c8a41a8c3ae2a6"));
+    const QString deviceSecret = env.value(QStringLiteral("ALIYUN_DEVICE_SECRET"));
+    const QString fixedPassword = env.value(QStringLiteral("ALIYUN_PASSWORD"),
+                                            QStringLiteral("91a8d87f1aaffcab93b149580098d24574b97a447c90823e6943f72142560513"));
     const QString regionId = env.value(QStringLiteral("ALIYUN_REGION_ID"), QStringLiteral("cn-shanghai"));
     const QString mqttHostUrl = env.value(QStringLiteral("ALIYUN_MQTT_HOST_URL"),
                                           QStringLiteral("iot-06z00be8pk7p1uz.mqtt.iothub.aliyuncs.com"));
     const QString clientId = env.value(QStringLiteral("ALIYUN_CLIENT_ID"),
-                                       QStringLiteral("k29ovUMboAH.0122-qt"));
-    const QString customTopic = env.value(QStringLiteral("ALIYUN_SUB_TOPIC"));
+                                       QStringLiteral("k29ovUMboAH.0122-qt|securemode=2,signmethod=hmacsha256,timestamp=1781166475258|"));
+    const QString customTopic = env.value(QStringLiteral("ALIYUN_SUB_TOPIC"),
+                                          QStringLiteral("/sys/k29ovUMboAH/0122-qt/thing/service/property/set"));
+    const quint16 mqttPort = static_cast<quint16>(
+        env.value(QStringLiteral("ALIYUN_MQTT_PORT"), QStringLiteral("1883")).toUInt());
 
-    if (productKey.isEmpty() || deviceName.isEmpty() || deviceSecret.isEmpty()) {
+    if (productKey.isEmpty() || deviceName.isEmpty() || (deviceSecret.isEmpty() && fixedPassword.isEmpty())) {
         updateStatusLabel(QStringLiteral("MQTT: 缺少阿里云环境变量配置"), QStringLiteral("#f0c674"));
         emit sensorConnectionStateChanged(false, QStringLiteral("配置不完整"));
         return;
@@ -220,10 +230,11 @@ void PageSensor::initMqttClient()
     config.productKey = productKey;
     config.deviceName = deviceName;
     config.deviceSecret = deviceSecret;
+    config.password = fixedPassword;
     config.regionId = regionId;
     config.mqttHostUrl = mqttHostUrl;
     config.clientId = clientId;
-    config.port = 8883;
+    config.port = mqttPort;
 
     if (!customTopic.isEmpty())
         config.subscribeTopics << customTopic;
@@ -266,4 +277,14 @@ QString PageSensor::aiDetectStateText(int state)
     default:
         return QStringLiteral("未知状态 %1").arg(state);
     }
+}
+
+QString PageSensor::alarmStateText(int state)
+{
+    return state == 0 ? QStringLiteral("未报警") : QStringLiteral("报警");
+}
+
+QString PageSensor::powerSwitchText(int state)
+{
+    return state == 0 ? QStringLiteral("关闭") : QStringLiteral("开启");
 }

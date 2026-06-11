@@ -29,6 +29,9 @@ struct AliyunSensorData
     bool hasAirPressure = false;
     double airPressure = 0.0;
 
+    bool hasPowerSwitch = false;
+    int powerSwitch = 0;
+
     bool hasAiDetectState = false;
     int aiDetectState = 0;
 
@@ -50,6 +53,7 @@ public:
         QString productKey ;
         QString deviceName ;
         QString deviceSecret ;
+        QString password ;
         QString regionId = QStringLiteral("cn-shanghai");
         QString mqttHostUrl;
         QString clientId ;
@@ -87,6 +91,7 @@ private:
     void scheduleReconnect();
     void reconnectToAliyun();
     void handleMessageReceived(const QByteArray &message, const QMqttTopicName &topic);
+    void replyPropertySetIfNeeded(const QString &topicName, const QJsonObject &root);
 
     QString brokerHost() const;
     QString plainClientId() const;

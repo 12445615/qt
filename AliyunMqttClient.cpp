@@ -1,6 +1,7 @@
 #include "AliyunMqttClient.h"
 
 #include <QDateTime>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
 #include <QMessageAuthenticationCode>
@@ -131,13 +132,18 @@ void AliyunMqttClient::connectToAliyun()
         m_client->disconnectFromHost();
 
     applyConnectionOptions();
-    const QSslConfiguration sslConfig = aliyunSslConfiguration();
+    const bool useTls = (m_config.port == 8883);
     qInfo().noquote()
         << QStringLiteral("MQTT 正在连接: host=%1，port=%2，clientId=%3")
                .arg(m_client->hostname(),
                     QString::number(m_client->port()),
                     plainClientId());
-    m_client->connectToHostEncrypted(sslConfig);
+    if (useTls) {
+        const QSslConfiguration sslConfig = aliyunSslConfiguration();
+        m_client->connectToHostEncrypted(sslConfig);
+    } else {
+        m_client->connectToHost();
+    }
 }
 
 void AliyunMqttClient::disconnectFromAliyun()
@@ -170,7 +176,6 @@ bool AliyunMqttClient::validateConfig()
 {
     if(m_config.productKey.isEmpty()
         || m_config.deviceName.isEmpty()
-        || m_config.deviceSecret.isEmpty()
         || m_config.regionId.isEmpty()) {
         const QString message = QStringLiteral("阿里云 MQTT 配置不完整");
         qWarning().noquote() << QStringLiteral("MQTT 连接错误: %1").arg(message);
@@ -187,7 +192,10 @@ void AliyunMqttClient::applyConnectionOptions()
 
     m_client->setHostname(brokerHost());
     m_client->setPort(m_config.port);
-    m_client->setClientId(mqttClientId(timestamp));
+    m_client->setClientId(
+        m_config.clientId.contains(QLatin1Char('|'))
+            ? m_config.clientId
+            : mqttClientId(timestamp));
     m_client->setUsername(username());
     m_client->setPassword(password(timestamp));
     m_client->setCleanSession(true);
@@ -205,6 +213,8 @@ void AliyunMqttClient::subscribeConfiguredTopics()
             continue;
 
         QMqttSubscription *subscription = m_client->subscribe(QMqttTopicFilter(topic),1);
+        qInfo().noquote() << QStringLiteral("MQTT subscribe: %1 ok=%2")
+                                 .arg(topic, subscription ? QStringLiteral("1") : QStringLiteral("0"));
         if(!subscription)
             emit errorOccurred(QStringLiteral("订阅失败: %1").arg(topic));
     }
@@ -240,6 +250,9 @@ void AliyunMqttClient::handleMessageReceived(const QByteArray &message, const QM
 {
     const QString topicName = topic.name();
     emit rawMessageReceived(topicName,message);
+    qInfo().noquote()
+        << QStringLiteral("MQTT message: topic=%1 bytes=%2")
+               .arg(topicName, QString::number(message.size()));
 
     QJsonParseError parseError;
     const QJsonDocument doc = QJsonDocument::fromJson(message,&parseError);
@@ -250,11 +263,35 @@ void AliyunMqttClient::handleMessageReceived(const QByteArray &message, const QM
     }
 
     const QJsonObject root = doc.object();
+    replyPropertySetIfNeeded(topicName, root);
     emit jsonMessageReceived(topicName,root);
 
     AliyunSensorData data;
     if(parseSensorData(root,&data))
         emit sensorDataReceived(data);
+}
+
+void AliyunMqttClient::replyPropertySetIfNeeded(const QString &topicName, const QJsonObject &root)
+{
+    if(!topicName.endsWith(QStringLiteral("/thing/service/property/set")))
+        return;
+
+    if(m_client->state() != QMqttClient::Connected)
+        return;
+
+    const QString replyTopic = QStringLiteral("/sys/%1/%2/thing/service/property/set_reply")
+                                   .arg(m_config.productKey, m_config.deviceName);
+    QJsonObject reply;
+    reply.insert(QStringLiteral("id"), root.value(QStringLiteral("id")));
+    reply.insert(QStringLiteral("code"), 200);
+    reply.insert(QStringLiteral("message"), QStringLiteral("success"));
+    reply.insert(QStringLiteral("data"), QJsonObject());
+
+    const QByteArray payload = QJsonDocument(reply).toJson(QJsonDocument::Compact);
+    m_client->publish(QMqttTopicName(replyTopic), payload, 1, false);
+    qInfo().noquote()
+        << QStringLiteral("MQTT property set reply: topic=%1 bytes=%2")
+               .arg(replyTopic, QString::number(payload.size()));
 }
 
 QString AliyunMqttClient::brokerHost() const
@@ -290,6 +327,9 @@ QString AliyunMqttClient::username() const
 
 QString AliyunMqttClient::password(const QString &timestamp) const
 {
+    if (!m_config.password.isEmpty())
+        return m_config.password;
+
     const QString content =
         QStringLiteral("clientId") + plainClientId()
         + QStringLiteral("deviceName") + m_config.deviceName
@@ -363,10 +403,21 @@ bool AliyunMqttClient::parseSensorData(const QJsonObject &root, AliyunSensorData
 
     QJsonObject params;
 
-    if(root.value(QStringLiteral("params")).isObject())
+    if(root.value(QStringLiteral("params")).isObject()) {
         params = root.value(QStringLiteral("params")).toObject();
-    else
+    } else if(root.value(QStringLiteral("items")).isObject()) {
+        const QJsonObject items = root.value(QStringLiteral("items")).toObject();
+        for(auto it = items.constBegin(); it != items.constEnd(); ++it) {
+            if(!it.value().isObject())
+                continue;
+
+            const QJsonObject item = it.value().toObject();
+            if(item.contains(QStringLiteral("value")))
+                params.insert(it.key(), item.value(QStringLiteral("value")));
+        }
+    } else {
         params = root;
+    }
 
     if(params.isEmpty())
         return false;
@@ -434,6 +485,8 @@ bool AliyunMqttClient::parseSensorData(const QJsonObject &root, AliyunSensorData
              &data->hasCombustibleGas,&data->combustibleGasDetected);
     readInt({QStringLiteral("AiDetectState")},
             &data->hasAiDetectState,&data->aiDetectState);
+    readInt({QStringLiteral("PowerSwitch")},
+            &data->hasPowerSwitch,&data->powerSwitch);
     readInt({QStringLiteral("AlarmState")},
             &data->hasAlarmState,&data->alarmState);
 
