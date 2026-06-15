@@ -8,6 +8,8 @@
 #include "page_home.h"
 #include "page_camera.h"
 #include "page_sensor.h"
+#include "PageZone.h"
+#include "AliyunMqttClient.h"
 #include "page_mechinemanager.h"
 #include "page_resourcemanager.h"
 #include "ModuleStateMachine.h"
@@ -30,6 +32,8 @@ private:
     PageMechineManager *mechinemanager;
     PageResourceManager *resourcemanager;
     PageSensor *sensor;
+    PageZone *zonePage;
+    AliyunMqttClient *sharedMqttClient;
     ModuleStateMachine *stateMachine;
 
 

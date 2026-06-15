@@ -14,7 +14,7 @@ class PageSensor : public QWidget
     Q_OBJECT
 
 public:
-    PageSensor(QWidget *parent = nullptr);
+    explicit PageSensor(AliyunMqttClient *mqttClient = nullptr, QWidget *parent = nullptr);
 
 signals:
     void sensorConnectionStateChanged(bool ok, const QString &message);
@@ -33,6 +33,7 @@ private slots:
 
 private:
     void initMqttClient();
+    void bindMqttSignals();
     void updateStatusLabel(const QString &text, const QString &color);
     static QString formatNumber(double value, int precision = 1);
     static QString aiDetectStateText(int state);
@@ -48,6 +49,7 @@ private:
     QLabel *aiDetectStateValue;
     AliyunMqttClient *mqttClient;
     QTimer *mqttReconnectTimer;
+    bool ownsMqttClient = false;
 };
 
 #endif // PAGE_SENSOR_H

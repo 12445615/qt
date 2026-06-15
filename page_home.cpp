@@ -20,6 +20,8 @@ PageHome::PageHome(QWidget *parent) : QWidget(parent)
     environmentStatus = new QLabel(QStringLiteral("等待数据"));
     rtmpStatus = new QLabel(QStringLiteral("未连接"));
     playbackStatus = new QLabel(QStringLiteral("未检测"));
+    rkOnlineStatus = new QLabel(QStringLiteral("离线"));
+    stm32OnlineStatus = new QLabel(QStringLiteral("离线"));
 
     QList<QLabel*> statusLabels = {
         mqttStatus,
@@ -29,7 +31,9 @@ PageHome::PageHome(QWidget *parent) : QWidget(parent)
         aiStatus,
         environmentStatus,
         rtmpStatus,
-        playbackStatus
+        playbackStatus,
+        rkOnlineStatus,
+        stm32OnlineStatus
     };
     for (QLabel *label : statusLabels) {
         label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -52,6 +56,8 @@ PageHome::PageHome(QWidget *parent) : QWidget(parent)
     environmentIcon = createIcon();
     rtmpIcon = createIcon();
     playbackIcon = createIcon();
+    rkOnlineIcon = createIcon();
+    stm32OnlineIcon = createIcon();
 
     QGridLayout *grid = new QGridLayout;
     grid->setHorizontalSpacing(28);
@@ -87,6 +93,8 @@ PageHome::PageHome(QWidget *parent) : QWidget(parent)
            environmentIcon, QStringLiteral("环境数据状态:"), environmentStatus);
     addRow(3, rtmpIcon, QStringLiteral("视频流状态:"), rtmpStatus,
            playbackIcon, QStringLiteral("录像回放状态:"), playbackStatus);
+    addRow(4, rkOnlineIcon, QStringLiteral("RK3588在线:"), rkOnlineStatus,
+           stm32OnlineIcon, QStringLiteral("STM32在线:"), stm32OnlineStatus);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addWidget(title);
@@ -201,4 +209,14 @@ void PageHome::setPlainStatus(QLabel *icon, QLabel *label,
 {
     label->setText(message);
     icon->setStyleSheet(QStringLiteral("background-color:%1;border-radius:8px;").arg(color));
+}
+
+void PageHome::updateDeviceOnlineState(bool rkOnline, bool stm32Online)
+{
+    rkOnlineStatus->setText(rkOnline ? QStringLiteral("在线") : QStringLiteral("离线"));
+    stm32OnlineStatus->setText(stm32Online ? QStringLiteral("在线") : QStringLiteral("离线"));
+    setPlainStatus(rkOnlineIcon, rkOnlineStatus, rkOnlineStatus->text(),
+                   rkOnline ? QStringLiteral("#98c379") : QStringLiteral("#e06c75"));
+    setPlainStatus(stm32OnlineIcon, stm32OnlineStatus, stm32OnlineStatus->text(),
+                   stm32Online ? QStringLiteral("#98c379") : QStringLiteral("#e06c75"));
 }

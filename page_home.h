@@ -22,6 +22,7 @@ public:
                             const QString &recentAlarm,
                             const QString &aiState,
                             const QString &environmentState);
+    void updateDeviceOnlineState(bool rkOnline, bool stm32Online);
 
 private slots:
     void applyModuleState(ModuleStateMachine::Module module,
@@ -44,6 +45,8 @@ private:
     QLabel *environmentStatus;
     QLabel *rtmpStatus;
     QLabel *playbackStatus;
+    QLabel *rkOnlineStatus;
+    QLabel *stm32OnlineStatus;
 
     QLabel *mqttIcon;
     QLabel *dataTimeIcon;
@@ -53,6 +56,8 @@ private:
     QLabel *environmentIcon;
     QLabel *rtmpIcon;
     QLabel *playbackIcon;
+    QLabel *rkOnlineIcon;
+    QLabel *stm32OnlineIcon;
 
     ModuleStateMachine *m_stateMachine = nullptr;
 };

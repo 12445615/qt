@@ -125,11 +125,12 @@ void AliyunMqttClient::connectToAliyun()
     if(!validateConfig())
         return;
 
+    if (m_client->state() == QMqttClient::Connected
+        || m_client->state() == QMqttClient::Connecting)
+        return;
+
     m_manualDisconnect = false;
     m_reconnectTimer->stop();
-
-    if(m_client->state() != QMqttClient::Disconnected)
-        m_client->disconnectFromHost();
 
     applyConnectionOptions();
     const bool useTls = (m_config.port == 8883);
@@ -151,6 +152,16 @@ void AliyunMqttClient::disconnectFromAliyun()
     m_manualDisconnect = true;
     m_reconnectTimer->stop();
     m_client->disconnectFromHost();
+}
+
+bool AliyunMqttClient::publishJson(const QString &topic, const QJsonObject &payload, int qos, bool retain)
+{
+    if (m_client->state() != QMqttClient::Connected)
+        return false;
+
+    const QByteArray bytes = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+    const quint16 id = m_client->publish(QMqttTopicName(topic), bytes, qos, retain);
+    return id != 0;
 }
 
 bool AliyunMqttClient::isConnected() const

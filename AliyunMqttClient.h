@@ -70,6 +70,7 @@ public:
 
     void connectToAliyun();
     void disconnectFromAliyun();
+    bool publishJson(const QString &topic, const QJsonObject &payload, int qos = 0, bool retain = false);
 
     bool isConnected() const;
     QMqttClient::ClientState state() const;

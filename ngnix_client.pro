@@ -20,6 +20,7 @@ SOURCES += \
     page_home.cpp \
     page_mechinemanager.cpp \
     page_resourcemanger.cpp \
+    PageZone.cpp \
     page_sensor.cpp \
     worker.cpp
 
@@ -34,6 +35,7 @@ HEADERS += \
     page_home.h \
     page_mechinemanager.h \
     page_resourcemanager.h \
+    PageZone.h \
     page_sensor.h \
     worker.h
 
