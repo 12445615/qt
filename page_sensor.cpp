@@ -1,4 +1,4 @@
-﻿#include "page_sensor.h"
+#include "page_sensor.h"
 
 #include <QDateTime>
 #include <QFrame>
@@ -125,13 +125,21 @@ void PageSensor::applySensorData(const AliyunSensorData &data)
         ? QStringLiteral("正常")
         : environmentWarnings.join(QStringLiteral("、"));
 
+    const bool aiFireState = data.hasAiDetectState
+        && (data.aiDetectState == 5 || data.aiDetectState == 6);
+    const bool fireAlarm = aiFireState
+        || (data.hasFire && data.fireConfidence > 0.0);
+
     QString recentAlarm = QStringLiteral("无");
-    if (data.hasAiDetectState && data.aiDetectState != 0) {
+    if (data.hasFire && data.fireConfidence > 0.0) {
+        recentAlarm = QStringLiteral("火灾报警 %1%")
+            .arg(qBound(0, static_cast<int>(data.fireConfidence + 0.5), 100));
+    } else if (aiFireState) {
+        recentAlarm = QStringLiteral("火灾报警（待复位）");
+    } else if (data.hasAiDetectState && data.aiDetectState != 0) {
         recentAlarm = aiText;
     } else if (!environmentWarnings.isEmpty()) {
         recentAlarm = environmentText;
-    } else if (data.hasFire && data.fireDetected) {
-        recentAlarm = QStringLiteral("火焰报警");
     } else if (data.hasAlarmState && data.alarmState != 0) {
         recentAlarm = QStringLiteral("设备报警");
     }
@@ -139,7 +147,7 @@ void PageSensor::applySensorData(const AliyunSensorData &data)
     const bool alarm = (data.hasAlarmState && data.alarmState != 0)
         || (data.hasAiDetectState && data.aiDetectState != 0)
         || !environmentWarnings.isEmpty()
-        || (data.hasFire && data.fireDetected);
+        || fireAlarm;
     const QString systemSafety = alarm ? QStringLiteral("报警") : QStringLiteral("正常");
 
     emit homeSummaryUpdated(QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")),

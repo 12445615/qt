@@ -490,8 +490,15 @@ bool AliyunMqttClient::parseSensorData(const QJsonObject &root, AliyunSensorData
     readNumber({QStringLiteral("CombustibleGasCheck")},
                &data->hasCombustibleGas,&data->combustibleGas);
 
-    readBool({QStringLiteral("fire"),QStringLiteral("fireDetected"),QStringLiteral("flame")},
-             &data->hasFire,&data->fireDetected);
+    readNumber({QStringLiteral("fire"), QStringLiteral("Fire"), QStringLiteral("fireConfidence")},
+               &data->hasFire, &data->fireConfidence);
+    if (data->hasFire) {
+        data->fireDetected = data->fireConfidence > 0.0;
+    } else {
+        readBool({QStringLiteral("fireDetected"),QStringLiteral("flame")},
+                 &data->hasFire,&data->fireDetected);
+        data->fireConfidence = data->fireDetected ? 100.0 : 0.0;
+    }
     readBool({QStringLiteral("combustibleGas"),QStringLiteral("combustible_gas"),QStringLiteral("gas")},
              &data->hasCombustibleGas,&data->combustibleGasDetected);
     readInt({QStringLiteral("AiDetectState")},

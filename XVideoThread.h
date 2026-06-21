@@ -5,6 +5,7 @@
 #include <QImage>
 #include <QObject>
 #include <QDebug>
+#include <QMutex>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -35,11 +36,15 @@ public:
     ~XVideoThread() override;
 
     void setUrl(const QString &url); // 设置流地址
+    void setPlaybackRate(double rate);
+    void seekToMs(qint64 ms);
 
 signals:
     void sig_sendInitState(bool ok);    // 初始化成功或失败
     void sig_SendOneFrame(const QImage &img); // 发送一帧图片
     void sig_errorMessage(const QString &message); // 发送错误信息
+    void sig_positionChanged(qint64 positionMs);
+    void sig_durationChanged(qint64 durationMs);
 
 protected:
     void run() override;
@@ -50,6 +55,9 @@ private:
 
     QImage frameToImage(AVFrame *frame);
     QString avErrorString(int errorCode) const;
+    bool isLiveUrl() const;
+    double playbackRate() const;
+    bool takePendingSeek(qint64 *positionMs);
 
 private:
     QString m_url;
@@ -59,6 +67,13 @@ private:
     SwsContext       *m_swsCtx  = nullptr;
     AVBSFContext     *m_bsfCtx  = nullptr; // H264 AVCC -> AnnexB 转换
     int m_videoIndex             = -1;
+    bool m_isLiveStream          = false;
+    qint64 m_durationMs          = 0;
+    qint64 m_streamStartMs       = 0;
+    mutable QMutex m_controlMutex;
+    double m_playbackRate        = 1.0;
+    bool m_seekRequested         = false;
+    qint64 m_pendingSeekMs       = 0;
 };
 
 #endif // XVIDEOTHREAD_H

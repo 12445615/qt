@@ -66,6 +66,7 @@ private:
     QVideoWidget *videoWidget;
     QPushButton *pushButton[5];
     QSlider *durationSlider;
+    QSlider *playbackDurationSlider;
     QSlider *volumeSlider;
     QLabel *label[2];       // 改成指针
     QListWidget *listWidget;
@@ -79,8 +80,11 @@ private:
     QLabel *playbackVideoLabel;
     QComboBox *playbackDeviceCombo;
     QComboBox *playbackDateCombo;
+    QComboBox *playbackSpeedCombo;
     QPushButton *playbackRefreshBtn;
     QPushButton *playbackPlayBtn;
+    QLabel *playbackPositionLabel;
+    QLabel *playbackDurationLabel;
     QVBoxLayout *mainLayout;
     QHBoxLayout *topLayout;
     QHBoxLayout *controlLayout;

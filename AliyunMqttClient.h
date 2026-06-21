@@ -21,6 +21,7 @@ struct AliyunSensorData
 
     bool hasFire = false;
     bool fireDetected = false;
+    double fireConfidence = 0.0;
 
     bool hasCombustibleGas = false;
     bool combustibleGasDetected = false;

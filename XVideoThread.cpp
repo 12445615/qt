@@ -2,6 +2,7 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QMutex>
+#include <QThread>
 #include <cstdio>
 
 namespace {
@@ -56,6 +57,51 @@ void XVideoThread::setUrl(const QString &url)
 {
     m_url = url;
     fprintf(stderr, "[RTMP][config] set url=%s\n", m_url.toUtf8().constData());
+}
+
+void XVideoThread::setPlaybackRate(double rate)
+{
+    QMutexLocker locker(&m_controlMutex);
+    if(rate < 0.25)
+        rate = 0.25;
+    if(rate > 4.0)
+        rate = 4.0;
+    m_playbackRate = rate;
+}
+
+void XVideoThread::seekToMs(qint64 ms)
+{
+    QMutexLocker locker(&m_controlMutex);
+    if(ms < 0)
+        ms = 0;
+    m_pendingSeekMs = ms;
+    m_seekRequested = true;
+}
+
+double XVideoThread::playbackRate() const
+{
+    QMutexLocker locker(&m_controlMutex);
+    return m_playbackRate;
+}
+
+bool XVideoThread::takePendingSeek(qint64 *positionMs)
+{
+    QMutexLocker locker(&m_controlMutex);
+    if(!m_seekRequested)
+        return false;
+    if(positionMs)
+        *positionMs = m_pendingSeekMs;
+    m_seekRequested = false;
+    return true;
+}
+
+bool XVideoThread::isLiveUrl() const
+{
+    return m_url.startsWith(QStringLiteral("rtmp://"), Qt::CaseInsensitive)
+           || m_url.startsWith(QStringLiteral("rtmps://"), Qt::CaseInsensitive)
+           || m_url.startsWith(QStringLiteral("rtsp://"), Qt::CaseInsensitive)
+           || m_url.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive)
+           || m_url.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive);
 }
 
 bool XVideoThread::init()
@@ -151,6 +197,7 @@ bool XVideoThread::init()
     m_videoIndex = ret;
     fprintf(stderr, "[RTMP][init] selected video stream index=%d\n", m_videoIndex);
     AVStream *st = m_fmtCtx->streams[m_videoIndex];
+    m_isLiveStream = isLiveUrl();
     if(!st || !st->codecpar){
         fprintf(stderr,
                 "[RTMP][init] selected stream has empty codecpar, fallback scanning streams\n");
@@ -174,6 +221,16 @@ bool XVideoThread::init()
             return false;
         }
     }
+
+    m_durationMs = 0;
+    m_streamStartMs = 0;
+    if(st->start_time != AV_NOPTS_VALUE)
+        m_streamStartMs = av_rescale_q(st->start_time, st->time_base, AVRational{1, 1000});
+    if(m_fmtCtx->duration != AV_NOPTS_VALUE && m_fmtCtx->duration > 0)
+        m_durationMs = m_fmtCtx->duration / (AV_TIME_BASE / 1000);
+    else if(st->duration != AV_NOPTS_VALUE && st->duration > 0)
+        m_durationMs = av_rescale_q(st->duration, st->time_base, AVRational{1, 1000});
+    emit sig_durationChanged(m_durationMs);
 
     const AVCodec *codec = avcodec_find_decoder(st->codecpar->codec_id);
     if(!codec){
@@ -302,8 +359,23 @@ void XVideoThread::run()
     int readPacketCount = 0;
     int videoPacketCount = 0;
     int decodedFrameCount = 0;
+    QElapsedTimer playbackTimer;
+    bool playbackTimerStarted = false;
+    qint64 playbackBaseMs = 0;
 
     while(!isInterruptionRequested()){
+        qint64 seekMs = 0;
+        if(!m_isLiveStream && takePendingSeek(&seekMs)){
+            AVStream *seekStream = m_fmtCtx->streams[m_videoIndex];
+            const qint64 targetMs = m_streamStartMs + seekMs;
+            const int64_t targetTs = av_rescale_q(targetMs, AVRational{1, 1000}, seekStream->time_base);
+            if(av_seek_frame(m_fmtCtx, m_videoIndex, targetTs, AVSEEK_FLAG_BACKWARD) >= 0){
+                avcodec_flush_buffers(m_codecCtx);
+                playbackTimerStarted = false;
+                emit sig_positionChanged(seekMs);
+            }
+        }
+
         const int readRet = av_read_frame(m_fmtCtx, pkt);
         if(readRet < 0){
             fprintf(stderr, "[RTMP][read] av_read_frame failed ret=%d error=%s\n",
@@ -372,6 +444,30 @@ void XVideoThread::run()
                     av_frame_unref(frame);
                     continue;
                 }
+            }
+
+            qint64 relativePosMs = decodedFrameCount * 33;
+            if(frame->best_effort_timestamp != AV_NOPTS_VALUE){
+                const qint64 ptsMs = av_rescale_q(frame->best_effort_timestamp,
+                                                  m_fmtCtx->streams[m_videoIndex]->time_base,
+                                                  AVRational{1, 1000});
+                relativePosMs = ptsMs - m_streamStartMs;
+                if(relativePosMs < 0)
+                    relativePosMs = 0;
+            }
+
+            if(!m_isLiveStream){
+                if(!playbackTimerStarted){
+                    playbackTimer.restart();
+                    playbackTimerStarted = true;
+                    playbackBaseMs = relativePosMs;
+                }
+                const double rate = playbackRate();
+                const qint64 targetElapsedMs = static_cast<qint64>((relativePosMs - playbackBaseMs) / rate);
+                const qint64 waitMs = targetElapsedMs - playbackTimer.elapsed();
+                if(waitMs > 1)
+                    QThread::msleep(static_cast<unsigned long>(qMin<qint64>(waitMs, 100)));
+                emit sig_positionChanged(relativePosMs);
             }
 
             QImage img = frameToImage(frame);

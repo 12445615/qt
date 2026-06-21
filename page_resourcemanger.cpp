@@ -99,32 +99,29 @@ PageResourceManager::PageResourceManager(QWidget *parent)
 
 void PageResourceManager::updateAI(float fire, float smoke, float gas)
 {
-    float total = fire*0.6f + smoke*0.25f + gas*0.15f;
-    int prob = total*100;
+    Q_UNUSED(smoke);
+    Q_UNUSED(gas);
 
-    // 曲线更新
+    int prob = qBound(0, qRound(fire), 100);
+
     series->append(timeIndex++, prob);
-    if(series->count() > 50)
+    if (series->count() > 50)
         series->removePoints(0, series->count() - 50);
 
-    // 更新 X 轴
     QValueAxis *axisX = qobject_cast<QValueAxis*>(chart->axisX());
-    if(axisX)
-        axisX->setRange(qMax(0, timeIndex-50), timeIndex);
+    if (axisX)
+        axisX->setRange(qMax(0, timeIndex - 50), timeIndex);
 
-    // 更新风险等级
     riskBar->setValue(prob);
-    if(prob > 70)
-    {
-        riskLabel->setText("风险等级：高风险");
-
-        QString time = QDateTime::currentDateTime().toString("hh:mm:ss");
-        addAlarm(time, "仓库A", prob);
+    if (prob > 70) {
+        riskLabel->setText(QStringLiteral("风险等级：高风险"));
+        QString time = QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss"));
+        addAlarm(time, QStringLiteral("仓库A"), prob);
+    } else if (prob > 40) {
+        riskLabel->setText(QStringLiteral("风险等级：中风险"));
+    } else {
+        riskLabel->setText(QStringLiteral("风险等级：低风险"));
     }
-    else if(prob > 40)
-        riskLabel->setText("风险等级：中风险");
-    else
-        riskLabel->setText("风险等级：低风险");
 }
 
 void PageResourceManager::addAlarm(const QString &time, const QString &location, float prob)
