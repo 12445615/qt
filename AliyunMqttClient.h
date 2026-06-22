@@ -32,6 +32,10 @@ struct AliyunSensorData
 
     bool hasPowerSwitch = false;
     int powerSwitch = 0;
+    bool hasPowerSwitch1 = false;
+    int powerSwitch1 = 0;
+    bool hasPowerSwitch2 = false;
+    int powerSwitch2 = 0;
 
     bool hasAiDetectState = false;
     int aiDetectState = 0;

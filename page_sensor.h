@@ -45,7 +45,8 @@ private:
     QLabel *alarmStateValue;
     QLabel *smokeValue;
     QLabel *combustible_gasValue;
-    QLabel *powerStateValue;
+    QLabel *power1StateValue;
+    QLabel *power2StateValue;
     QLabel *aiDetectStateValue;
     AliyunMqttClient *mqttClient;
     QTimer *mqttReconnectTimer;

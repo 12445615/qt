@@ -505,6 +505,14 @@ bool AliyunMqttClient::parseSensorData(const QJsonObject &root, AliyunSensorData
             &data->hasAiDetectState,&data->aiDetectState);
     readInt({QStringLiteral("PowerSwitch")},
             &data->hasPowerSwitch,&data->powerSwitch);
+    readInt({QStringLiteral("PowerSwitch1")},
+            &data->hasPowerSwitch1,&data->powerSwitch1);
+    readInt({QStringLiteral("PowerSwitch2")},
+            &data->hasPowerSwitch2,&data->powerSwitch2);
+    if (!data->hasPowerSwitch && (data->hasPowerSwitch1 || data->hasPowerSwitch2)) {
+        data->hasPowerSwitch = true;
+        data->powerSwitch = (data->powerSwitch1 != 0 && data->powerSwitch2 != 0) ? 1 : 0;
+    }
     readInt({QStringLiteral("AlarmState")},
             &data->hasAlarmState,&data->alarmState);
 

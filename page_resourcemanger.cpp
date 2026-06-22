@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QValueAxis>
 #include <QPainter>
+#include <QTableWidgetItem>
 
 PageResourceManager::PageResourceManager(QWidget *parent)
     : QWidget(parent), timeIndex(0)
@@ -28,7 +29,7 @@ PageResourceManager::PageResourceManager(QWidget *parent)
     // X 轴
     QValueAxis *axisX = new QValueAxis;
     axisX->setRange(0,50);
-    axisX->setTitleText("时间");
+    axisX->setTitleText("报警时间线");
     axisX->setLabelsColor(Qt::white);
     axisX->setGridLineColor(QColor("#394b61"));
     chart->addAxis(axisX, Qt::AlignBottom);
@@ -104,14 +105,6 @@ void PageResourceManager::updateAI(float fire, float smoke, float gas)
 
     int prob = qBound(0, qRound(fire), 100);
 
-    series->append(timeIndex++, prob);
-    if (series->count() > 50)
-        series->removePoints(0, series->count() - 50);
-
-    QValueAxis *axisX = qobject_cast<QValueAxis*>(chart->axisX());
-    if (axisX)
-        axisX->setRange(qMax(0, timeIndex - 50), timeIndex);
-
     riskBar->setValue(prob);
     if (prob > 70) {
         riskLabel->setText(QStringLiteral("风险等级：高风险"));
@@ -133,4 +126,40 @@ void PageResourceManager::addAlarm(const QString &time, const QString &location,
     alarmTable->setItem(row, 1, new QTableWidgetItem(location));
     alarmTable->setItem(row, 2, new QTableWidgetItem("火灾报警"));
     alarmTable->setItem(row, 3, new QTableWidgetItem(QString::number(prob) + "%"));
+
+    rebuildChartFromAlarmTable();
+}
+
+void PageResourceManager::rebuildChartFromAlarmTable()
+{
+    series->clear();
+
+    const int rowCount = alarmTable->rowCount();
+    const int firstRow = qMax(0, rowCount - 50);
+    for (int row = firstRow; row < rowCount; ++row) {
+        QTableWidgetItem *probItem = alarmTable->item(row, 3);
+        if (!probItem)
+            continue;
+
+        QString probText = probItem->text().trimmed();
+        probText.remove(QStringLiteral("%"));
+
+        bool ok = false;
+        const double prob = probText.toDouble(&ok);
+        if (!ok)
+            continue;
+
+        series->append(row - firstRow, qBound(0.0, prob, 100.0));
+    }
+
+    QValueAxis *axisX = qobject_cast<QValueAxis*>(chart->axisX());
+    if (axisX) {
+        const int visibleCount = qMax(1, series->count());
+        axisX->setRange(0, qMax(1, visibleCount - 1));
+        axisX->setTickCount(qMin(6, visibleCount + 1));
+    }
+
+    QValueAxis *axisY = qobject_cast<QValueAxis*>(chart->axisY());
+    if (axisY)
+        axisY->setRange(0, 100);
 }

@@ -16,7 +16,8 @@ PageSensor::PageSensor(AliyunMqttClient *sharedClient, QWidget *parent)
       alarmStateValue(new QLabel(QStringLiteral("--"), this)),
       smokeValue(new QLabel(QStringLiteral("--"), this)),
       combustible_gasValue(new QLabel(QStringLiteral("--"), this)),
-      powerStateValue(new QLabel(QStringLiteral("--"), this)),
+      power1StateValue(new QLabel(QStringLiteral("--"), this)),
+      power2StateValue(new QLabel(QStringLiteral("--"), this)),
       aiDetectStateValue(new QLabel(QStringLiteral("无目标"), this)),
       mqttClient(sharedClient ? sharedClient : new AliyunMqttClient(this)),
       mqttReconnectTimer(new QTimer(this))
@@ -34,7 +35,8 @@ PageSensor::PageSensor(AliyunMqttClient *sharedClient, QWidget *parent)
         tempValue,
         alarmStateValue,
         smokeValue,
-        powerStateValue,
+        power1StateValue,
+        power2StateValue,
         combustible_gasValue,
         aiDetectStateValue
     };
@@ -69,7 +71,8 @@ PageSensor::PageSensor(AliyunMqttClient *sharedClient, QWidget *parent)
     grid->addWidget(createCard(QStringLiteral("烟雾浓度"), smokeValue), 1, 0);
     grid->addWidget(createCard(QStringLiteral("AI状态"), aiDetectStateValue), 1, 1);
     grid->addWidget(createCard(QStringLiteral("可燃气体检测"), combustible_gasValue), 2, 0);
-    grid->addWidget(createCard(QStringLiteral("电源状态"), powerStateValue), 2, 1);
+    grid->addWidget(createCard(QStringLiteral("工作区1电源"), power1StateValue), 2, 1);
+    grid->addWidget(createCard(QStringLiteral("工作区2电源"), power2StateValue), 3, 0);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->addWidget(title);
@@ -107,8 +110,17 @@ void PageSensor::applySensorData(const AliyunSensorData &data)
     if (data.hasAlarmState)
         alarmStateValue->setText(alarmStateText(data.alarmState));
 
-    if (data.hasPowerSwitch)
-        powerStateValue->setText(powerSwitchText(data.powerSwitch));
+    if (data.hasPowerSwitch1) {
+        power1StateValue->setText(powerSwitchText(data.powerSwitch1));
+    } else if (data.hasPowerSwitch) {
+        power1StateValue->setText(powerSwitchText(data.powerSwitch));
+    }
+
+    if (data.hasPowerSwitch2) {
+        power2StateValue->setText(powerSwitchText(data.powerSwitch2));
+    } else if (data.hasPowerSwitch) {
+        power2StateValue->setText(powerSwitchText(data.powerSwitch));
+    }
 
     QStringList environmentWarnings;
     if (data.hasSmoke && data.smoke >= kSmokeAlarmThreshold)

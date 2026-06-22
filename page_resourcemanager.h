@@ -21,6 +21,7 @@ public:
 
 private:
     void addAlarm(const QString &time, const QString &location, float prob);
+    void rebuildChartFromAlarmTable();
 
 private:
     QLineSeries *series;
